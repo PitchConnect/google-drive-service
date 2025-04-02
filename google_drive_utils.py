@@ -9,11 +9,13 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 SCOPES = ['https://www.googleapis.com/auth/drive']
 CREDENTIALS_PATH = 'credentials.json'
 TOKEN_PATH = 'token.json'
-REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob' # Define redirect URI here
+REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob'  # Define redirect URI here
+
 
 def check_token_exists():
     """Checks if token.json exists."""
     return os.path.exists(TOKEN_PATH)
+
 
 def generate_authorization_url():
     """Generates the Google Drive authorization URL."""
@@ -26,6 +28,7 @@ def generate_authorization_url():
         print(f"Error generating authorization URL: {e}")
         return None
 
+
 def exchange_code_for_tokens(code):
     """Exchanges the authorization code for access and refresh tokens and saves them."""
     flow = InstalledAppFlow.from_client_secrets_file(
@@ -36,12 +39,12 @@ def exchange_code_for_tokens(code):
         if creds and creds.valid:
             with open(TOKEN_PATH, 'w') as token:
                 token.write(creds.to_json())
-            return True # Success
+            return True  # Success
         else:
-            return False # Failed to get valid credentials
+            return False  # Failed to get valid credentials
     except Exception as e:
         print(f"Error exchanging authorization code for tokens: {e}")
-        return False # Exchange failed
+        return False  # Exchange failed
 
 
 def authenticate_google_drive():
@@ -55,10 +58,10 @@ def authenticate_google_drive():
                 creds.refresh(Request())
             except Exception as e:
                 print(f"Error refreshing credentials: {e}")
-                os.remove(TOKEN_PATH) # Remove invalid token
-                return None # Indicate authentication failure, force re-auth
+                os.remove(TOKEN_PATH)  # Remove invalid token
+                return None  # Indicate authentication failure, force re-auth
         else:
-            return None # No valid credentials available, force authorization flow
+            return None  # No valid credentials available, force authorization flow
 
     try:
         service = build('drive', 'v3', credentials=creds)
@@ -67,13 +70,14 @@ def authenticate_google_drive():
         print(f'An error occurred: {error}')
         return None
 
+
 def create_folder_if_not_exists(drive_service, folder_path):
     """Creates folders in Google Drive if they don't exist.
     Handles nested folders as well.
     Returns the ID of the last folder created (or existing folder).
     """
     parent_folder_id = 'root'  # Start at the root of Drive
-    folders = folder_path.strip('/').split('/') # Split path into folder names
+    folders = folder_path.strip('/').split('/')  # Split path into folder names
 
     for folder_name in folders:
         folder_id = find_folder_id(drive_service, folder_name, parent_folder_id)
@@ -94,10 +98,11 @@ def find_folder_id(drive_service, folder_name, parent_id):
         if items:
             return items[0]['id']  # Return the ID of the first matching folder
         else:
-            return None # Folder not found
+            return None  # Folder not found
     except HttpError as error:
         print(f'An error occurred: {error}')
         return None
+
 
 def create_folder(drive_service, folder_name, parent_id):
     """Creates a folder in Google Drive."""
@@ -118,7 +123,7 @@ def create_folder(drive_service, folder_name, parent_id):
 def upload_file_to_drive(drive_service, file_path, folder_id):
     """Uploads a file to Google Drive in the specified folder."""
     file_name = os.path.basename(file_path)
-    media = MediaFileUpload(file_path, resumable=True) # Detect mimetype automatically
+    media = MediaFileUpload(file_path, resumable=True)  # Detect mimetype automatically
     file_metadata = {
         'name': file_name,
         'parents': [folder_id]
@@ -128,7 +133,44 @@ def upload_file_to_drive(drive_service, file_path, folder_id):
                                             media_body=media,
                                             fields='id,webViewLink').execute()
         print(f"File ID: {file.get('id')}")
-        return file.get('webViewLink') # Return the webViewLink (shareable link)
+        return file.get('webViewLink')  # Return the webViewLink (shareable link)
     except HttpError as error:
         print(f'An error occurred: {error}')
         return None
+
+
+def get_folder_id_by_path(drive_service, folder_path):
+    """Gets the ID of a folder given its full path.
+    Returns None if the folder path does not exist.
+    """
+    parent_folder_id = 'root'  # Start at the root of Drive
+    folders = folder_path.strip('/').split('/')
+    current_folder_id = parent_folder_id
+
+    for folder_name in folders:
+        folder_id = find_folder_id(drive_service, folder_name, current_folder_id)
+        if folder_id:
+            current_folder_id = folder_id
+        else:
+            return None  # Folder path not found
+    return current_folder_id  # Return the ID of the final folder in the path
+
+
+def delete_folder_by_id(drive_service, folder_id):
+    """Deletes a folder in Google Drive by its folder ID."""
+    try:
+        drive_service.files().delete(fileId=folder_id).execute()
+        return True  # Deletion successful
+    except HttpError as error:
+        print(f'An error occurred during folder deletion: {error}')
+        return False  # Deletion failed
+
+
+def delete_folder_by_path(drive_service, folder_path):
+    """Deletes a folder in Google Drive given its full path."""
+    folder_id = get_folder_id_by_path(drive_service, folder_path)
+    if folder_id:
+        return delete_folder_by_id(drive_service, folder_id)  # Delete by ID if found
+    else:
+        print(f"Folder path '{folder_path}' not found, cannot delete.")
+        return False  # Folder path not found, cannot delete
