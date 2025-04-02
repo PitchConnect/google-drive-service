@@ -1,0 +1,134 @@
+import os
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaFileUpload
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+
+SCOPES = ['https://www.googleapis.com/auth/drive']
+CREDENTIALS_PATH = 'credentials.json'
+TOKEN_PATH = 'token.json'
+REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob' # Define redirect URI here
+
+def check_token_exists():
+    """Checks if token.json exists."""
+    return os.path.exists(TOKEN_PATH)
+
+def generate_authorization_url():
+    """Generates the Google Drive authorization URL."""
+    flow = InstalledAppFlow.from_client_secrets_file(
+        CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
+    try:
+        authorization_url, state = flow.authorization_url(prompt='consent')
+        return authorization_url
+    except Exception as e:
+        print(f"Error generating authorization URL: {e}")
+        return None
+
+def exchange_code_for_tokens(code):
+    """Exchanges the authorization code for access and refresh tokens and saves them."""
+    flow = InstalledAppFlow.from_client_secrets_file(
+        CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
+    try:
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        if creds and creds.valid:
+            with open(TOKEN_PATH, 'w') as token:
+                token.write(creds.to_json())
+            return True # Success
+        else:
+            return False # Failed to get valid credentials
+    except Exception as e:
+        print(f"Error exchanging authorization code for tokens: {e}")
+        return False # Exchange failed
+
+
+def authenticate_google_drive():
+    """Authenticates with Google Drive API using existing tokens if available."""
+    creds = None
+    if os.path.exists(TOKEN_PATH):
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"Error refreshing credentials: {e}")
+                os.remove(TOKEN_PATH) # Remove invalid token
+                return None # Indicate authentication failure, force re-auth
+        else:
+            return None # No valid credentials available, force authorization flow
+
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        return service
+    except HttpError as error:
+        print(f'An error occurred: {error}')
+        return None
+
+def create_folder_if_not_exists(drive_service, folder_path):
+    """Creates folders in Google Drive if they don't exist.
+    Handles nested folders as well.
+    Returns the ID of the last folder created (or existing folder).
+    """
+    parent_folder_id = 'root'  # Start at the root of Drive
+    folders = folder_path.strip('/').split('/') # Split path into folder names
+
+    for folder_name in folders:
+        folder_id = find_folder_id(drive_service, folder_name, parent_folder_id)
+        if not folder_id:
+            folder_id = create_folder(drive_service, folder_name, parent_folder_id)
+        parent_folder_id = folder_id  # Next folder will be inside this one
+    return parent_folder_id  # Return the ID of the final folder
+
+
+def find_folder_id(drive_service, folder_name, parent_id):
+    """Finds a folder ID by name within a parent folder."""
+    try:
+        results = drive_service.files().list(
+            q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}' and '{parent_id}' in parents and trashed=false",
+            fields="files(id)"
+        ).execute()
+        items = results.get('files', [])
+        if items:
+            return items[0]['id']  # Return the ID of the first matching folder
+        else:
+            return None # Folder not found
+    except HttpError as error:
+        print(f'An error occurred: {error}')
+        return None
+
+def create_folder(drive_service, folder_name, parent_id):
+    """Creates a folder in Google Drive."""
+    file_metadata = {
+        'name': folder_name,
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [parent_id]
+    }
+    try:
+        file = drive_service.files().create(body=file_metadata,
+                                            fields='id').execute()
+        return file.get('id')
+    except HttpError as error:
+        print(f'An error occurred: {error}')
+        return None
+
+
+def upload_file_to_drive(drive_service, file_path, folder_id):
+    """Uploads a file to Google Drive in the specified folder."""
+    file_name = os.path.basename(file_path)
+    media = MediaFileUpload(file_path, resumable=True) # Detect mimetype automatically
+    file_metadata = {
+        'name': file_name,
+        'parents': [folder_id]
+    }
+    try:
+        file = drive_service.files().create(body=file_metadata,
+                                            media_body=media,
+                                            fields='id,webViewLink').execute()
+        print(f"File ID: {file.get('id')}")
+        return file.get('webViewLink') # Return the webViewLink (shareable link)
+    except HttpError as error:
+        print(f'An error occurred: {error}')
+        return None
