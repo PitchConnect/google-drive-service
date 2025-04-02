@@ -1,3 +1,4 @@
+import logging
 import os
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -10,6 +11,9 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 CREDENTIALS_PATH = 'credentials.json'
 TOKEN_PATH = 'token.json'
 REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob'  # Define redirect URI here
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 def check_token_exists():
@@ -25,7 +29,7 @@ def generate_authorization_url():
         authorization_url, state = flow.authorization_url(prompt='consent')
         return authorization_url
     except Exception as e:
-        print(f"Error generating authorization URL: {e}")
+        logger.exception(f"Error generating authorization URL: {e}")
         return None
 
 
@@ -43,7 +47,7 @@ def exchange_code_for_tokens(code):
         else:
             return False  # Failed to get valid credentials
     except Exception as e:
-        print(f"Error exchanging authorization code for tokens: {e}")
+        logger.exception(f"Error exchanging authorization code for tokens: {e}")
         return False  # Exchange failed
 
 
@@ -57,7 +61,7 @@ def authenticate_google_drive():
             try:
                 creds.refresh(Request())
             except Exception as e:
-                print(f"Error refreshing credentials: {e}")
+                logger.exception(f"Error refreshing credentials: {e}")
                 os.remove(TOKEN_PATH)  # Remove invalid token
                 return None  # Indicate authentication failure, force re-auth
         else:
@@ -67,7 +71,7 @@ def authenticate_google_drive():
         service = build('drive', 'v3', credentials=creds)
         return service
     except HttpError as error:
-        print(f'An error occurred: {error}')
+        logger.exception(f'An error occurred: {error}')
         return None
 
 
@@ -100,7 +104,7 @@ def find_folder_id(drive_service, folder_name, parent_id):
         else:
             return None  # Folder not found
     except HttpError as error:
-        print(f'An error occurred: {error}')
+        logger.exception(f'An error occurred: {error}')
         return None
 
 
@@ -116,7 +120,7 @@ def create_folder(drive_service, folder_name, parent_id):
                                             fields='id').execute()
         return file.get('id')
     except HttpError as error:
-        print(f'An error occurred: {error}')
+        logger.exception(f'An error occurred: {error}')
         return None
 
 
@@ -132,10 +136,10 @@ def upload_file_to_drive(drive_service, file_path, folder_id):
         file = drive_service.files().create(body=file_metadata,
                                             media_body=media,
                                             fields='id,webViewLink').execute()
-        print(f"File ID: {file.get('id')}")
+        logger.debug(f"File ID: {file.get('id')}")
         return file.get('webViewLink')  # Return the webViewLink (shareable link)
     except HttpError as error:
-        print(f'An error occurred: {error}')
+        logger.exception(f'An error occurred: {error}')
         return None
 
 
@@ -162,7 +166,7 @@ def delete_folder_by_id(drive_service, folder_id):
         drive_service.files().delete(fileId=folder_id).execute()
         return True  # Deletion successful
     except HttpError as error:
-        print(f'An error occurred during folder deletion: {error}')
+        logger.exception(f'An error occurred during folder deletion: {error}')
         return False  # Deletion failed
 
 
@@ -172,5 +176,5 @@ def delete_folder_by_path(drive_service, folder_path):
     if folder_id:
         return delete_folder_by_id(drive_service, folder_id)  # Delete by ID if found
     else:
-        print(f"Folder path '{folder_path}' not found, cannot delete.")
+        logger.error(f"Folder path '{folder_path}' not found, cannot delete.")
         return False  # Folder path not found, cannot delete

@@ -1,3 +1,4 @@
+import logging
 import os
 
 from flask import Flask, request, jsonify
@@ -6,6 +7,10 @@ from google_drive_utils import authenticate_google_drive, create_folder_if_not_e
     generate_authorization_url, exchange_code_for_tokens, check_token_exists, delete_folder_by_path
 
 app = Flask(__name__)
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 
 
 @app.route('/authorize_gdrive', methods=['GET'])
@@ -73,7 +78,7 @@ def upload_file_endpoint():
                 return jsonify({'error': 'File upload failed to Google Drive'}), 500
 
         except Exception as e:
-            print(f"Error during file upload: {e}")
+            logger.exception(f"Error during file upload: {e}")
             return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
     return jsonify({'error': 'Unknown error'}), 500
@@ -99,7 +104,7 @@ def delete_folder_endpoint():
                 {'status': 'error', 'message': f'Failed to delete folder "{folder_path}" or folder not found'}), 500
 
     except Exception as e:
-        print(f"Error during folder deletion: {e}")
+        logger.exception(f"Error during folder deletion: {e}")
         return jsonify({'error': f'Internal server error during folder deletion: {str(e)}'}), 500
 
 
