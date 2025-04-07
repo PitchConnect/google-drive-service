@@ -39,7 +39,12 @@ def submit_auth_code_endpoint():
 
 @app.route('/upload_file', methods=['POST'])
 def upload_file_endpoint():
-    """Endpoint to upload a file to Google Drive."""
+    """Endpoint to upload a file to Google Drive.
+
+    Optional form parameters:
+    - overwrite: Set to 'false' to keep both files if a file with the same name exists.
+                Default is 'true' (overwrite existing files).
+    """
 
     if not check_token_exists():
         return jsonify(
@@ -49,6 +54,10 @@ def upload_file_endpoint():
         return jsonify({'error': 'No file part'}), 400
     file = request.files['file']
     folder_path = request.form.get('folder_path')
+
+    # Get overwrite parameter (default is True)
+    overwrite_param = request.form.get('overwrite', 'true').lower()
+    overwrite = overwrite_param != 'false'  # Only 'false' will disable overwriting
 
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
@@ -69,11 +78,15 @@ def upload_file_endpoint():
             temp_file_path = os.path.join('/tmp', file.filename)
             file.save(temp_file_path)
 
-            file_url = upload_file_to_drive(drive_service, temp_file_path, folder_id)
+            file_url = upload_file_to_drive(drive_service, temp_file_path, folder_id, overwrite=overwrite)
             os.remove(temp_file_path)
 
             if file_url:
-                return jsonify({'status': 'success', 'file_url': file_url}), 200
+                return jsonify({
+                    'status': 'success',
+                    'file_url': file_url,
+                    'overwrite_mode': 'enabled' if overwrite else 'disabled'
+                }), 200
             else:
                 return jsonify({'error': 'File upload failed to Google Drive'}), 500
 
@@ -106,6 +119,19 @@ def delete_folder_endpoint():
     except Exception as e:
         logger.exception(f"Error during folder deletion: {e}")
         return jsonify({'error': f'Internal server error during folder deletion: {str(e)}'}), 500
+
+
+@app.route('/health')
+def health_check():
+    # Check if Google Drive API is accessible
+    try:
+        drive_service = authenticate_google_drive()
+        if drive_service:
+            return jsonify({"status": "healthy"}), 200
+        else:
+            return jsonify({"status": "degraded", "reason": "auth_required"}), 200
+    except Exception as e:
+        return jsonify({"status": "unhealthy", "reason": str(e)}), 500
 
 
 if __name__ == '__main__':

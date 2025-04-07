@@ -124,9 +124,57 @@ def create_folder(drive_service, folder_name, parent_id):
         return None
 
 
-def upload_file_to_drive(drive_service, file_path, folder_id):
-    """Uploads a file to Google Drive in the specified folder."""
+def find_file_id(drive_service, file_name, folder_id):
+    """Finds a file ID by name within a parent folder."""
+    try:
+        results = drive_service.files().list(
+            q=f"name='{file_name}' and '{folder_id}' in parents and trashed=false",
+            fields="files(id)"
+        ).execute()
+        items = results.get('files', [])
+        if items:
+            return items[0]['id']  # Return the ID of the first matching file
+        else:
+            return None  # File not found
+    except HttpError as error:
+        logger.exception(f'An error occurred while finding file: {error}')
+        return None
+
+
+def delete_file_by_id(drive_service, file_id):
+    """Deletes a file in Google Drive by its file ID."""
+    try:
+        drive_service.files().delete(fileId=file_id).execute()
+        return True  # Deletion successful
+    except HttpError as error:
+        logger.exception(f'An error occurred during file deletion: {error}')
+        return False  # Deletion failed
+
+
+def upload_file_to_drive(drive_service, file_path, folder_id, overwrite=True):
+    """Uploads a file to Google Drive in the specified folder.
+
+    Args:
+        drive_service: The Google Drive service instance.
+        file_path: Path to the file to upload.
+        folder_id: ID of the folder to upload to.
+        overwrite: If True, overwrites existing file with the same name. If False, keeps both files.
+
+    Returns:
+        The webViewLink (shareable link) of the uploaded file, or None if upload failed.
+    """
     file_name = os.path.basename(file_path)
+
+    # Check if file with same name exists and delete it if overwrite is True
+    if overwrite:
+        existing_file_id = find_file_id(drive_service, file_name, folder_id)
+        if existing_file_id:
+            logger.info(f"Found existing file '{file_name}' with ID {existing_file_id}. Deleting it before upload.")
+            delete_success = delete_file_by_id(drive_service, existing_file_id)
+            if not delete_success:
+                logger.warning(f"Failed to delete existing file '{file_name}'. Proceeding with upload anyway.")
+
+    # Upload the file
     media = MediaFileUpload(file_path, resumable=True)  # Detect mimetype automatically
     file_metadata = {
         'name': file_name,
@@ -136,10 +184,10 @@ def upload_file_to_drive(drive_service, file_path, folder_id):
         file = drive_service.files().create(body=file_metadata,
                                             media_body=media,
                                             fields='id,webViewLink').execute()
-        logger.debug(f"File ID: {file.get('id')}")
+        logger.info(f"File '{file_name}' uploaded successfully. File ID: {file.get('id')}")
         return file.get('webViewLink')  # Return the webViewLink (shareable link)
     except HttpError as error:
-        logger.exception(f'An error occurred: {error}')
+        logger.exception(f'An error occurred during file upload: {error}')
         return None
 
 

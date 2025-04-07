@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  google-drive-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: google-drive-service
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    volumes:
+      - google-drive-service-data:/app
+    networks:
+      - fogis-network
+    environment:
+      - FLASK_ENV=production
+      # Add any other environment variables your app needs
+
+volumes:
+  google-drive-service-data:
+    # This preserves your credentials between container restarts
+
+networks:
+  fogis-network:
+    external: true
