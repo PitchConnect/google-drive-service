@@ -1,138 +1,455 @@
 import logging
 import os
+import time
+import traceback
+from typing import Dict, Any, Tuple, Optional, Union, List
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
+from werkzeug.exceptions import HTTPException
 
-from google_drive_utils import authenticate_google_drive, create_folder_if_not_exists, upload_file_to_drive, \
+from google_drive_utils import (
+    authenticate_google_drive, create_folder_if_not_exists, upload_file_to_drive,
     generate_authorization_url, exchange_code_for_tokens, check_token_exists, delete_folder_by_path
+)
+from retry_utils import detailed_error_response
 
 app = Flask(__name__)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging
+log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(level=getattr(logging, log_level),
+                    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Request tracking for debugging
+request_count = 0
 
 
+# Error handling and request tracking middleware
+@app.before_request
+def before_request() -> None:
+    """Log and track incoming requests."""
+    global request_count
+    request_count += 1
+    request.start_time = time.time()
+    request.request_id = f"{int(time.time())}-{request_count}"
+
+    logger.info(f"Request {request.request_id} started: {request.method} {request.path} "
+               f"[{request.remote_addr}]")
+
+    # Log request data for debugging (excluding file uploads)
+    if request.content_type and 'multipart/form-data' not in request.content_type:
+        logger.debug(f"Request {request.request_id} data: {request.get_data(as_text=True)}")
+
+
+@app.after_request
+def after_request(response: Response) -> Response:
+    """Log response information."""
+    if hasattr(request, 'start_time') and hasattr(request, 'request_id'):
+        duration = time.time() - request.start_time
+        logger.info(f"Request {request.request_id} completed: {response.status_code} "
+                   f"in {duration:.3f}s")
+    return response
+
+
+@app.errorhandler(Exception)
+def handle_exception(e: Exception) -> Tuple[Response, int]:
+    """Handle all unhandled exceptions."""
+    # Log the exception with traceback
+    logger.error(f"Unhandled exception: {str(e)}\n{traceback.format_exc()}")
+
+    # Handle HTTP exceptions
+    if isinstance(e, HTTPException):
+        return jsonify({
+            'error': {
+                'type': 'HTTPException',
+                'code': e.code,
+                'name': e.name,
+                'description': e.description
+            }
+        }), e.code
+
+    # Handle all other exceptions
+    return jsonify({
+        'error': {
+            'type': e.__class__.__name__,
+            'message': str(e)
+        }
+    }), 500
+
+
+# API Endpoints
 @app.route('/authorize_gdrive', methods=['GET'])
-def authorize_gdrive_endpoint():
+def authorize_gdrive_endpoint() -> Tuple[Response, int]:
     """Endpoint to get the Google Drive authorization URL."""
-    authorization_url = generate_authorization_url()
-    if authorization_url:
-        return jsonify({'authorization_url': authorization_url}), 200
-    else:
-        return jsonify({'error': 'Failed to generate authorization URL'}), 500
+    try:
+        logger.info("Generating Google Drive authorization URL")
+        authorization_url = generate_authorization_url()
+
+        if not authorization_url:
+            logger.error("Failed to generate authorization URL")
+            return jsonify({
+                'error': {
+                    'type': 'AuthorizationError',
+                    'message': 'Failed to generate authorization URL'
+                }
+            }), 500
+
+        logger.info("Successfully generated authorization URL")
+        return jsonify({
+            'status': 'success',
+            'authorization_url': authorization_url
+        }), 200
+
+    except Exception as e:
+        logger.exception(f"Error generating authorization URL: {e}")
+        return jsonify({
+            'error': {
+                'type': e.__class__.__name__,
+                'message': str(e)
+            }
+        }), 500
 
 
 @app.route('/submit_auth_code', methods=['POST'])
-def submit_auth_code_endpoint():
+def submit_auth_code_endpoint() -> Tuple[Response, int]:
     """Endpoint to submit the authorization code and obtain tokens."""
-    code = request.form.get('code')  # Get authorization code from form data
-    if not code:
-        return jsonify({'error': 'Authorization code is required'}), 400
+    try:
+        # Get authorization code from form data
+        code = request.form.get('code')
 
-    success = exchange_code_for_tokens(code)
-    if success:
-        return jsonify({'status': 'authorization_successful'}), 200
-    else:
-        return jsonify({'error': 'Failed to exchange authorization code for tokens'}), 500
+        if not code:
+            logger.warning("Authorization code is required but was not provided")
+            return jsonify({
+                'error': {
+                    'type': 'ValidationError',
+                    'message': 'Authorization code is required',
+                    'field': 'code'
+                }
+            }), 400
+
+        logger.info("Exchanging authorization code for tokens")
+        success = exchange_code_for_tokens(code)
+
+        if success:
+            logger.info("Successfully exchanged authorization code for tokens")
+            return jsonify({
+                'status': 'success',
+                'message': 'Authorization successful'
+            }), 200
+        else:
+            logger.error("Failed to exchange authorization code for tokens")
+            return jsonify({
+                'error': {
+                    'type': 'AuthorizationError',
+                    'message': 'Failed to exchange authorization code for tokens'
+                }
+            }), 500
+
+    except Exception as e:
+        logger.exception(f"Error exchanging authorization code: {e}")
+        return jsonify({
+            'error': {
+                'type': e.__class__.__name__,
+                'message': str(e)
+            }
+        }), 500
 
 
 @app.route('/upload_file', methods=['POST'])
-def upload_file_endpoint():
+def upload_file_endpoint() -> Tuple[Response, int]:
     """Endpoint to upload a file to Google Drive.
 
     Optional form parameters:
     - overwrite: Set to 'false' to keep both files if a file with the same name exists.
                 Default is 'true' (overwrite existing files).
     """
+    temp_file_path = None
 
-    if not check_token_exists():
-        return jsonify(
-            {'error': 'Authorization required. Please visit /authorize_gdrive first and then /submit_auth_code.'}), 401
+    try:
+        # Check authentication
+        if not check_token_exists():
+            logger.warning("Upload attempted without authentication")
+            return jsonify({
+                'error': {
+                    'type': 'AuthenticationError',
+                    'message': 'Authorization required. Please visit /authorize_gdrive first and then /submit_auth_code.'
+                }
+            }), 401
 
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    folder_path = request.form.get('folder_path')
+        # Validate request parameters
+        validation_errors = []
 
-    # Get overwrite parameter (default is True)
-    overwrite_param = request.form.get('overwrite', 'true').lower()
-    overwrite = overwrite_param != 'false'  # Only 'false' will disable overwriting
+        if 'file' not in request.files:
+            validation_errors.append({'field': 'file', 'message': 'No file part'})
+        else:
+            file = request.files['file']
+            if file.filename == '':
+                validation_errors.append({'field': 'file', 'message': 'No selected file'})
 
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    if not folder_path:
-        return jsonify({'error': 'Folder path is required'}), 400
+        folder_path = request.form.get('folder_path')
+        if not folder_path:
+            validation_errors.append({'field': 'folder_path', 'message': 'Folder path is required'})
 
-    if file:
-        try:
-            drive_service = authenticate_google_drive()  # Now this should just load tokens
-            if not drive_service:
-                return jsonify(
-                    {'error': 'Google Drive authentication failed (tokens invalid or missing). Re-authorize.'}), 500
+        # Return all validation errors at once
+        if validation_errors:
+            logger.warning(f"Validation errors in upload request: {validation_errors}")
+            return jsonify({
+                'error': {
+                    'type': 'ValidationError',
+                    'message': 'Invalid request parameters',
+                    'details': validation_errors
+                }
+            }), 400
 
-            folder_id = create_folder_if_not_exists(drive_service, folder_path)
-            if not folder_id:
-                return jsonify({'error': 'Failed to create folder'}), 500
+        # Get overwrite parameter (default is True)
+        overwrite_param = request.form.get('overwrite', 'true').lower()
+        overwrite = overwrite_param != 'false'  # Only 'false' will disable overwriting
 
-            temp_file_path = os.path.join('/tmp', file.filename)
-            file.save(temp_file_path)
+        file = request.files['file']
 
-            file_url = upload_file_to_drive(drive_service, temp_file_path, folder_id, overwrite=overwrite)
+        # Authenticate with Google Drive
+        logger.info(f"Authenticating with Google Drive for file upload: {file.filename}")
+        drive_service = authenticate_google_drive()
+        if not drive_service:
+            logger.error("Google Drive authentication failed")
+            return jsonify({
+                'error': {
+                    'type': 'AuthenticationError',
+                    'message': 'Google Drive authentication failed (tokens invalid or missing). Re-authorize.'
+                }
+            }), 500
+
+        # Create folder structure if needed
+        logger.info(f"Creating folder structure: {folder_path}")
+        folder_id = create_folder_if_not_exists(drive_service, folder_path)
+        if not folder_id:
+            logger.error(f"Failed to create folder structure: {folder_path}")
+            return jsonify({
+                'error': {
+                    'type': 'FolderCreationError',
+                    'message': f"Failed to create folder structure: {folder_path}"
+                }
+            }), 500
+
+        # Save file to temporary location
+        temp_file_path = os.path.join('/tmp', file.filename)
+        logger.debug(f"Saving uploaded file to temporary location: {temp_file_path}")
+        file.save(temp_file_path)
+
+        # Upload file to Google Drive
+        logger.info(f"Uploading file to Google Drive: {file.filename} (overwrite={overwrite})")
+        file_url = upload_file_to_drive(drive_service, temp_file_path, folder_id, overwrite=overwrite)
+
+        # Clean up temporary file
+        if temp_file_path and os.path.exists(temp_file_path):
+            logger.debug(f"Removing temporary file: {temp_file_path}")
             os.remove(temp_file_path)
+            temp_file_path = None
 
-            if file_url:
-                return jsonify({
-                    'status': 'success',
-                    'file_url': file_url,
-                    'overwrite_mode': 'enabled' if overwrite else 'disabled'
-                }), 200
-            else:
-                return jsonify({'error': 'File upload failed to Google Drive'}), 500
+        if not file_url:
+            logger.error(f"File upload failed: {file.filename}")
+            return jsonify({
+                'error': {
+                    'type': 'UploadError',
+                    'message': 'File upload failed to Google Drive'
+                }
+            }), 500
 
-        except Exception as e:
-            logger.exception(f"Error during file upload: {e}")
-            return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+        # Success response
+        logger.info(f"File uploaded successfully: {file.filename}")
+        return jsonify({
+            'status': 'success',
+            'file_url': file_url,
+            'file_name': file.filename,
+            'folder_path': folder_path,
+            'overwrite_mode': 'enabled' if overwrite else 'disabled'
+        }), 200
 
-    return jsonify({'error': 'Unknown error'}), 500
+    except Exception as e:
+        logger.exception(f"Error during file upload: {e}")
+
+        # Clean up temporary file if it exists
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                logger.debug(f"Removing temporary file after error: {temp_file_path}")
+                os.remove(temp_file_path)
+            except Exception as cleanup_error:
+                logger.error(f"Failed to remove temporary file: {cleanup_error}")
+
+        return jsonify({
+            'error': {
+                'type': e.__class__.__name__,
+                'message': str(e)
+            }
+        }), 500
 
 
 @app.route('/delete_folder', methods=['POST'])
-def delete_folder_endpoint():
+def delete_folder_endpoint() -> Tuple[Response, int]:
     """Endpoint to delete a folder in Google Drive by path."""
-    folder_path = request.form.get('folder_path')  # Get folder path from form data
-
-    if not folder_path:
-        return jsonify({'error': 'Folder path is required'}), 400
-
     try:
+        # Validate request parameters
+        folder_path = request.form.get('folder_path')  # Get folder path from form data
+
+        if not folder_path:
+            logger.warning("Delete folder request missing folder_path parameter")
+            return jsonify({
+                'error': {
+                    'type': 'ValidationError',
+                    'message': 'Folder path is required',
+                    'field': 'folder_path'
+                }
+            }), 400
+
+        # Check authentication
+        if not check_token_exists():
+            logger.warning("Delete folder attempted without authentication")
+            return jsonify({
+                'error': {
+                    'type': 'AuthenticationError',
+                    'message': 'Authorization required. Please visit /authorize_gdrive first and then /submit_auth_code.'
+                }
+            }), 401
+
+        # Authenticate with Google Drive
+        logger.info(f"Authenticating with Google Drive for folder deletion: {folder_path}")
         drive_service = authenticate_google_drive()
         if not drive_service:
-            return jsonify({'error': 'Google Drive authentication failed'}), 500
+            logger.error("Google Drive authentication failed")
+            return jsonify({
+                'error': {
+                    'type': 'AuthenticationError',
+                    'message': 'Google Drive authentication failed (tokens invalid or missing). Re-authorize.'
+                }
+            }), 500
 
+        # Delete the folder
+        logger.info(f"Deleting folder: {folder_path}")
         if delete_folder_by_path(drive_service, folder_path):
-            return jsonify({'status': 'success', 'message': f'Folder "{folder_path}" deleted successfully'}), 200
+            logger.info(f"Successfully deleted folder: {folder_path}")
+            return jsonify({
+                'status': 'success',
+                'message': f'Folder "{folder_path}" deleted successfully'
+            }), 200
         else:
-            return jsonify(
-                {'status': 'error', 'message': f'Failed to delete folder "{folder_path}" or folder not found'}), 500
+            logger.warning(f"Failed to delete folder: {folder_path}")
+            return jsonify({
+                'error': {
+                    'type': 'DeletionError',
+                    'message': f'Failed to delete folder "{folder_path}" or folder not found'
+                }
+            }), 404  # Using 404 is more appropriate when the resource is not found
 
     except Exception as e:
         logger.exception(f"Error during folder deletion: {e}")
-        return jsonify({'error': f'Internal server error during folder deletion: {str(e)}'}), 500
+        return jsonify({
+            'error': {
+                'type': e.__class__.__name__,
+                'message': str(e)
+            }
+        }), 500
 
 
 @app.route('/health')
-def health_check():
+def health_check() -> Tuple[Response, int]:
+    """Health check endpoint to verify service status.
+
+    Returns:
+        JSON response with service health status:
+        - healthy: Service is fully operational
+        - degraded: Service is running but with limited functionality
+        - unhealthy: Service is not operational
+    """
+    response = {
+        "service": "google-drive-service",
+        "timestamp": time.time(),
+        "version": os.environ.get('SERVICE_VERSION', 'development')
+    }
+
+    # Check if token file exists
+    token_exists = check_token_exists()
+    response["auth_status"] = "authenticated" if token_exists else "unauthenticated"
+
     # Check if Google Drive API is accessible
     try:
+        start_time = time.time()
         drive_service = authenticate_google_drive()
+        api_response_time = time.time() - start_time
+        response["api_response_time_ms"] = round(api_response_time * 1000, 2)
+
         if drive_service:
-            return jsonify({"status": "healthy"}), 200
+            # Try a simple API call to verify connectivity
+            drive_service.files().list(pageSize=1).execute()
+            response["status"] = "healthy"
+            response["api_connectivity"] = True
+            return jsonify(response), 200
         else:
-            return jsonify({"status": "degraded", "reason": "auth_required"}), 200
+            response["status"] = "degraded"
+            response["reason"] = "auth_required"
+            response["api_connectivity"] = False
+            response["message"] = "Authentication required. Visit /authorize_gdrive to authenticate."
+            return jsonify(response), 200
     except Exception as e:
-        return jsonify({"status": "unhealthy", "reason": str(e)}), 500
+        response["status"] = "unhealthy"
+        response["reason"] = str(e)
+        response["api_connectivity"] = False
+        response["error_type"] = e.__class__.__name__
+        logger.error(f"Health check failed: {e}")
+        return jsonify(response), 500
+
+
+# Add a route to get service information
+@app.route('/info')
+def service_info() -> Tuple[Response, int]:
+    """Returns information about the service."""
+    info = {
+        "service": "google-drive-service",
+        "description": "Service for interacting with Google Drive",
+        "version": os.environ.get('SERVICE_VERSION', 'development'),
+        "endpoints": [
+            {
+                "path": "/authorize_gdrive",
+                "method": "GET",
+                "description": "Get Google Drive authorization URL"
+            },
+            {
+                "path": "/submit_auth_code",
+                "method": "POST",
+                "description": "Submit authorization code to obtain tokens"
+            },
+            {
+                "path": "/upload_file",
+                "method": "POST",
+                "description": "Upload a file to Google Drive"
+            },
+            {
+                "path": "/delete_folder",
+                "method": "POST",
+                "description": "Delete a folder in Google Drive"
+            },
+            {
+                "path": "/health",
+                "method": "GET",
+                "description": "Check service health"
+            },
+            {
+                "path": "/info",
+                "method": "GET",
+                "description": "Get service information"
+            }
+        ],
+        "environment": os.environ.get('FLASK_ENV', 'production')
+    }
+    return jsonify(info), 200
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+    # Get debug mode from environment variable
+    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+
+    # Get port from environment variable or use default
+    port = int(os.environ.get('PORT', 5000))
+
+    logger.info(f"Starting Google Drive Service on port {port} (debug={debug_mode})")
+    app.run(debug=debug_mode, host='0.0.0.0', port=port)

@@ -10,6 +10,10 @@ A microservice for interacting with Google Drive, providing endpoints for file u
 - Automatic folder path creation (nested folders)
 - File overwrite control
 - Comprehensive test suite
+- Robust error handling and retry mechanisms
+- Rate limiting to prevent API quota issues
+- Circuit breaker pattern for resilience
+- Detailed error responses
 
 ## API Endpoints
 
@@ -52,7 +56,23 @@ Deletes a folder in Google Drive by path.
 ### Health Check
 
 #### GET /health
-Returns the health status of the service.
+Returns the health status of the service with detailed information.
+
+**Response:**
+```json
+{
+  "service": "google-drive-service",
+  "status": "healthy",
+  "timestamp": 1623456789.123,
+  "version": "development",
+  "auth_status": "authenticated",
+  "api_response_time_ms": 123.45,
+  "api_connectivity": true
+}
+```
+
+#### GET /info
+Returns information about the service, including available endpoints.
 
 ## Docker Deployment
 
@@ -65,6 +85,14 @@ docker-compose up -d
 ## Configuration
 
 The service requires a `credentials.json` file from the Google Cloud Console with the Drive API enabled.
+
+### Environment Variables
+
+- `LOG_LEVEL`: Logging level (default: INFO)
+- `FLASK_ENV`: Environment (development/production)
+- `FLASK_DEBUG`: Enable debug mode (true/false)
+- `PORT`: Port to run the service on (default: 5000)
+- `SERVICE_VERSION`: Version of the service (default: development)
 
 ## Development
 
@@ -104,3 +132,45 @@ The CI pipeline:
 ### Mock Google Drive Service
 
 For testing purposes, a mock implementation of the Google Drive service is provided in `tests/mock_google_drive.py`. This allows for integration testing without actual Google Drive API calls.
+
+## Error Handling
+
+The service implements several layers of error handling and resilience:
+
+### Retry Mechanism
+
+All Google Drive API calls are automatically retried with exponential backoff when transient errors occur:
+
+- Rate limit exceeded errors
+- Server-side errors (500, 502, 503, 504)
+- Network connectivity issues
+
+### Rate Limiting
+
+API calls are rate-limited to prevent exceeding Google Drive API quotas:
+
+- Default: 5 calls per second
+- Burst: Up to 10 calls at once
+
+### Circuit Breaker
+
+The circuit breaker pattern is implemented to prevent cascading failures:
+
+1. After 5 consecutive failures, the circuit opens
+2. In open state, calls fail fast without attempting API calls
+3. After 60 seconds, the circuit transitions to half-open
+4. If a call succeeds in half-open state, the circuit closes
+
+### Detailed Error Responses
+
+All API endpoints return structured error responses:
+
+```json
+{
+  "error": {
+    "type": "ErrorType",
+    "message": "Detailed error message",
+    "details": [...] // Optional additional details
+  }
+}
+```
