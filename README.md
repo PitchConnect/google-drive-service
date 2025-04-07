@@ -9,6 +9,7 @@ A microservice for interacting with Google Drive, providing endpoints for file u
 - Folder creation and deletion
 - Automatic folder path creation (nested folders)
 - File overwrite control
+- Comprehensive test suite
 
 ## API Endpoints
 
@@ -64,3 +65,42 @@ docker-compose up -d
 ## Configuration
 
 The service requires a `credentials.json` file from the Google Cloud Console with the Drive API enabled.
+
+## Development
+
+### Testing
+
+This project includes a comprehensive test suite using pytest. To run the tests:
+
+1. Install development dependencies:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+2. Run the tests:
+   ```bash
+   ./run_tests.sh
+   ```
+
+   Or use pytest directly:
+   ```bash
+   pytest
+   ```
+
+3. To see test coverage:
+   ```bash
+   pytest --cov=./ --cov-report=term
+   ```
+
+### Continuous Integration
+
+This project uses GitHub Actions for continuous integration. Pull requests to the main branch require passing tests before they can be merged.
+
+The CI pipeline:
+1. Runs the test suite
+2. Generates code coverage reports
+3. Prevents merging PRs with failing tests
+
+### Mock Google Drive Service
+
+For testing purposes, a mock implementation of the Google Drive service is provided in `tests/mock_google_drive.py`. This allows for integration testing without actual Google Drive API calls.

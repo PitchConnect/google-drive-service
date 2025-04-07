@@ -1,0 +1,8 @@
+# These owners will be the default owners for everything in the repo.
+# They will be requested for review when someone opens a pull request.
+* @REPLACE_WITH_YOUR_GITHUB_USERNAME
+
+# You can also specify different owners for different parts of the codebase
+# /app.py @app-maintainer
+# /google_drive_utils.py @utils-maintainer
+# /tests/ @test-maintainer

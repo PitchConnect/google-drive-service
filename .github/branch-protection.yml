@@ -1,0 +1,17 @@
+# Branch protection rules configuration
+# This file documents the branch protection settings that should be applied in GitHub
+# Note: This file is for documentation purposes only. The actual settings must be configured in GitHub UI.
+
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        strict: true
+        contexts:
+          - "test"  # This corresponds to the GitHub Actions workflow job name
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: false
+      enforce_admins: false
+      restrictions: null
