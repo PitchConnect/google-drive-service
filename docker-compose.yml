@@ -15,11 +15,30 @@ services:
       - fogis-network
     environment:
       - FLASK_ENV=production
-      # Add any other environment variables your app needs
+      - LOG_LEVEL=INFO
+
+      - TZ=Europe/Stockholm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   google-drive-service-data:
-    # This preserves your credentials between container restarts
+    name: google-drive-service-data
+    driver: local
 
 networks:
   fogis-network:
