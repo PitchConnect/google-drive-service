@@ -13,8 +13,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from retry_utils import retry, rate_limit, circuit_breaker, detailed_error_response
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
-CREDENTIALS_PATH = 'credentials.json'
-TOKEN_PATH = 'token.json'
+CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', '/app/credentials/google-credentials.json')
+TOKEN_PATH = os.getenv('GOOGLE_TOKEN_PATH', '/app/data/google-drive-token.json')
 REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob'  # Define redirect URI here
 
 # Configure logging
