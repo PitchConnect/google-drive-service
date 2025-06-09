@@ -71,12 +71,10 @@ class TestGoogleDriveUtils(unittest.TestCase):
         mock_execute = MagicMock(side_effect=HttpError(resp=MagicMock(status=500), content=b'Error'))
         mock_list.execute = mock_execute
         self.mock_drive_service.files().list.return_value = mock_list
-        
-        # Test the function
-        result = find_file_id(self.mock_drive_service, 'test_file.txt', 'folder_id')
-        
-        # Verify the result
-        self.assertIsNone(result)
+
+        # Test the function - it should raise an HttpError after retries
+        with self.assertRaises(HttpError):
+            find_file_id(self.mock_drive_service, 'test_file.txt', 'folder_id')
     
     def test_delete_file_by_id_success(self):
         """Test deleting a file by ID when successful."""
@@ -102,12 +100,10 @@ class TestGoogleDriveUtils(unittest.TestCase):
         mock_execute = MagicMock(side_effect=HttpError(resp=MagicMock(status=500), content=b'Error'))
         mock_delete.execute = mock_execute
         self.mock_drive_service.files().delete.return_value = mock_delete
-        
-        # Test the function
-        result = delete_file_by_id(self.mock_drive_service, 'test_file_id')
-        
-        # Verify the result
-        self.assertFalse(result)
+
+        # Test the function - it should raise an HttpError after retries
+        with self.assertRaises(HttpError):
+            delete_file_by_id(self.mock_drive_service, 'test_file_id')
     
     @patch('google_drive_utils.find_file_id')
     @patch('google_drive_utils.delete_file_by_id')
@@ -118,25 +114,25 @@ class TestGoogleDriveUtils(unittest.TestCase):
         mock_find_file.return_value = None  # No existing file
         mock_media = MagicMock()
         mock_media_upload.return_value = mock_media
-        
-        # Mock the files().create().execute() response
-        mock_create = MagicMock()
-        mock_execute = MagicMock(return_value={'id': 'new_file_id', 'webViewLink': 'https://drive.google.com/file/d/new_file_id'})
-        mock_create.execute = mock_execute
-        self.mock_drive_service.files().create.return_value = mock_create
-        
+
+        # Mock the resumable upload request and response
+        mock_request = MagicMock()
+        # Mock next_chunk to return (None, response) indicating upload is complete
+        mock_request.next_chunk.return_value = (None, {'id': 'new_file_id', 'webViewLink': 'https://drive.google.com/file/d/new_file_id'})
+        self.mock_drive_service.files().create.return_value = mock_request
+
         # Test the function
         result = upload_file_to_drive(self.mock_drive_service, self.test_file_path, 'folder_id')
-        
+
         # Verify the result
         self.assertEqual(result, 'https://drive.google.com/file/d/new_file_id')
-        
+
         # Verify find_file_id was called
         mock_find_file.assert_called_once_with(self.mock_drive_service, os.path.basename(self.test_file_path), 'folder_id')
-        
+
         # Verify delete_file_by_id was not called (no existing file)
         mock_delete_file.assert_not_called()
-        
+
         # Verify create was called with correct parameters
         self.mock_drive_service.files().create.assert_called_once()
         call_args = self.mock_drive_service.files().create.call_args[1]
@@ -154,22 +150,22 @@ class TestGoogleDriveUtils(unittest.TestCase):
         mock_delete_file.return_value = True  # Deletion successful
         mock_media = MagicMock()
         mock_media_upload.return_value = mock_media
-        
-        # Mock the files().create().execute() response
-        mock_create = MagicMock()
-        mock_execute = MagicMock(return_value={'id': 'new_file_id', 'webViewLink': 'https://drive.google.com/file/d/new_file_id'})
-        mock_create.execute = mock_execute
-        self.mock_drive_service.files().create.return_value = mock_create
-        
+
+        # Mock the resumable upload request and response
+        mock_request = MagicMock()
+        # Mock next_chunk to return (None, response) indicating upload is complete
+        mock_request.next_chunk.return_value = (None, {'id': 'new_file_id', 'webViewLink': 'https://drive.google.com/file/d/new_file_id'})
+        self.mock_drive_service.files().create.return_value = mock_request
+
         # Test the function
         result = upload_file_to_drive(self.mock_drive_service, self.test_file_path, 'folder_id', overwrite=True)
-        
+
         # Verify the result
         self.assertEqual(result, 'https://drive.google.com/file/d/new_file_id')
-        
+
         # Verify find_file_id was called
         mock_find_file.assert_called_once_with(self.mock_drive_service, os.path.basename(self.test_file_path), 'folder_id')
-        
+
         # Verify delete_file_by_id was called with the existing file ID
         mock_delete_file.assert_called_once_with(self.mock_drive_service, 'existing_file_id')
     
@@ -182,22 +178,22 @@ class TestGoogleDriveUtils(unittest.TestCase):
         mock_find_file.return_value = 'existing_file_id'  # Existing file
         mock_media = MagicMock()
         mock_media_upload.return_value = mock_media
-        
-        # Mock the files().create().execute() response
-        mock_create = MagicMock()
-        mock_execute = MagicMock(return_value={'id': 'new_file_id', 'webViewLink': 'https://drive.google.com/file/d/new_file_id'})
-        mock_create.execute = mock_execute
-        self.mock_drive_service.files().create.return_value = mock_create
-        
+
+        # Mock the resumable upload request and response
+        mock_request = MagicMock()
+        # Mock next_chunk to return (None, response) indicating upload is complete
+        mock_request.next_chunk.return_value = (None, {'id': 'new_file_id', 'webViewLink': 'https://drive.google.com/file/d/new_file_id'})
+        self.mock_drive_service.files().create.return_value = mock_request
+
         # Test the function
         result = upload_file_to_drive(self.mock_drive_service, self.test_file_path, 'folder_id', overwrite=False)
-        
+
         # Verify the result
         self.assertEqual(result, 'https://drive.google.com/file/d/new_file_id')
-        
+
         # Verify find_file_id was not called (overwrite=False)
         mock_find_file.assert_not_called()
-        
+
         # Verify delete_file_by_id was not called
         mock_delete_file.assert_not_called()
     
@@ -210,18 +206,15 @@ class TestGoogleDriveUtils(unittest.TestCase):
         mock_find_file.return_value = None  # No existing file
         mock_media = MagicMock()
         mock_media_upload.return_value = mock_media
-        
-        # Mock the files().create().execute() to raise an HttpError
-        mock_create = MagicMock()
-        mock_execute = MagicMock(side_effect=HttpError(resp=MagicMock(status=500), content=b'Error'))
-        mock_create.execute = mock_execute
-        self.mock_drive_service.files().create.return_value = mock_create
-        
-        # Test the function
-        result = upload_file_to_drive(self.mock_drive_service, self.test_file_path, 'folder_id')
-        
-        # Verify the result
-        self.assertIsNone(result)
+
+        # Mock the resumable upload request to raise an HttpError on next_chunk
+        mock_request = MagicMock()
+        mock_request.next_chunk.side_effect = HttpError(resp=MagicMock(status=500), content=b'Error')
+        self.mock_drive_service.files().create.return_value = mock_request
+
+        # Test the function - it should raise an HttpError after retries
+        with self.assertRaises(HttpError):
+            upload_file_to_drive(self.mock_drive_service, self.test_file_path, 'folder_id')
     
     # Additional tests for folder-related functions
     def test_find_folder_id(self):
