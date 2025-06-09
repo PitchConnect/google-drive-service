@@ -74,13 +74,29 @@ Returns the health status of the service with detailed information.
 #### GET /info
 Returns information about the service, including available endpoints.
 
+#### GET /version
+Returns detailed version information including build date and environment.
+
 ## Docker Deployment
 
-The service can be deployed using Docker and Docker Compose:
-
+### Using Docker Compose
 ```bash
 docker-compose up -d
 ```
+
+### Using Docker Hub Images
+```bash
+# Pull latest version
+docker pull ghcr.io/pitchconnect/google-drive-service:latest
+
+# Run container
+docker run -p 5000:5000 ghcr.io/pitchconnect/google-drive-service:latest
+```
+
+### Available Tags
+- `latest`: Most recent release
+- `YYYY.MM.PATCH`: Specific version (e.g., `2025.01.0`)
+- `YYYY.MM`: Monthly version (e.g., `2025.01`)
 
 ## Configuration
 

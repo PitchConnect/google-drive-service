@@ -12,6 +12,7 @@ from google_drive_utils import (
     generate_authorization_url, exchange_code_for_tokens, check_token_exists, delete_folder_by_path
 )
 from retry_utils import detailed_error_response
+from version import get_version, get_version_info
 
 app = Flask(__name__)
 
@@ -364,7 +365,7 @@ def health_check() -> Tuple[Response, int]:
     response = {
         "service": "google-drive-service",
         "timestamp": time.time(),
-        "version": os.environ.get('SERVICE_VERSION', 'development')
+        "version": get_version()
     }
 
     # Check if token file exists
@@ -406,7 +407,7 @@ def service_info() -> Tuple[Response, int]:
     info = {
         "service": "google-drive-service",
         "description": "Service for interacting with Google Drive",
-        "version": os.environ.get('SERVICE_VERSION', 'development'),
+        "version": get_version(),
         "endpoints": [
             {
                 "path": "/authorize_gdrive",
@@ -442,6 +443,12 @@ def service_info() -> Tuple[Response, int]:
         "environment": os.environ.get('FLASK_ENV', 'production')
     }
     return jsonify(info), 200
+
+
+@app.route('/version')
+def version_endpoint() -> Tuple[Response, int]:
+    """Returns detailed version information."""
+    return jsonify(get_version_info()), 200
 
 
 if __name__ == '__main__':
