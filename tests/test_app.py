@@ -1,9 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 import json
-import os
 import io
-import tempfile
 from app import app
 
 
@@ -325,6 +323,162 @@ class TestApp(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         response_data = json.loads(response.data)
         self.assertIn('error', response_data)
+
+    def test_info_endpoint(self):
+        """Test the /info endpoint returns service information."""
+        response = self.client.get('/info')
+
+        # Check response
+        self.assertEqual(response.status_code, 200)
+        response_data = json.loads(response.data)
+
+        # Check required fields
+        self.assertIn('service', response_data)
+        self.assertIn('description', response_data)
+        self.assertIn('version', response_data)
+        self.assertIn('endpoints', response_data)
+
+        # Check specific values
+        self.assertEqual(response_data['service'], 'google-drive-service')
+        self.assertEqual(response_data['description'], 'Service for interacting with Google Drive')
+        self.assertIsInstance(response_data['endpoints'], list)
+        self.assertTrue(len(response_data['endpoints']) > 0)
+
+        # Check endpoint structure
+        for endpoint in response_data['endpoints']:
+            self.assertIn('path', endpoint)
+            self.assertIn('method', endpoint)
+            self.assertIn('description', endpoint)
+
+    def test_submit_auth_code_form_data(self):
+        """Test the submit_auth_code endpoint with form data."""
+        with patch('app.exchange_code_for_tokens') as mock_exchange:
+            # Configure mock to return success
+            mock_exchange.return_value = True
+
+            # Make request with form data
+            response = self.client.post('/submit_auth_code',
+                                      data={'code': 'test_code'})
+
+            # Check response
+            self.assertEqual(response.status_code, 200)
+            response_data = json.loads(response.data)
+            self.assertEqual(response_data['status'], 'success')
+            self.assertEqual(response_data['message'], 'Authorization successful')
+
+    def test_submit_auth_code_invalid_json(self):
+        """Test the submit_auth_code endpoint with invalid JSON."""
+        response = self.client.post('/submit_auth_code',
+                                  data='invalid json',
+                                  content_type='application/json')
+
+        # Check response
+        self.assertEqual(response.status_code, 400)
+        response_data = json.loads(response.data)
+        self.assertIn('error', response_data)
+
+    def test_delete_folder_form_data(self):
+        """Test the delete_folder endpoint with form data."""
+        with patch('app.check_token_exists') as mock_check_token, \
+             patch('app.authenticate_google_drive') as mock_auth, \
+             patch('app.delete_folder_by_path') as mock_delete_folder:
+
+            # Configure mocks
+            mock_check_token.return_value = True
+            mock_auth.return_value = MagicMock()
+            mock_delete_folder.return_value = True
+
+            # Make request with form data
+            response = self.client.post('/delete_folder',
+                                      data={'folder_path': 'test/folder'})
+
+            # Check response
+            self.assertEqual(response.status_code, 200)
+            response_data = json.loads(response.data)
+            self.assertEqual(response_data['status'], 'success')
+
+    def test_delete_folder_no_auth(self):
+        """Test the delete_folder endpoint when not authenticated."""
+        with patch('app.check_token_exists') as mock_check_token:
+            # Configure mock to return False (not authenticated)
+            mock_check_token.return_value = False
+
+            # Make request with form data
+            response = self.client.post('/delete_folder',
+                                      data={'folder_path': 'test/folder'})
+
+            # Check response
+            self.assertEqual(response.status_code, 401)
+            response_data = json.loads(response.data)
+            self.assertIn('error', response_data)
+
+    @patch('app.logger')
+    def test_request_logging(self, mock_logger):
+        """Test that requests are properly logged."""
+        # Make a request
+        response = self.client.get('/info')
+
+        # Check that logging was called
+        self.assertTrue(mock_logger.info.called)
+
+        # Check response is successful
+        self.assertEqual(response.status_code, 200)
+
+    def test_error_handling_middleware(self):
+        """Test error handling middleware for unhandled exceptions."""
+        with patch('app.get_version') as mock_get_version:
+            # Configure mock to raise an exception
+            mock_get_version.side_effect = Exception('Test error')
+
+            # Make request that will trigger the error
+            response = self.client.get('/info')
+
+            # Check that error is handled gracefully
+            self.assertEqual(response.status_code, 500)
+            response_data = json.loads(response.data)
+            self.assertIn('error', response_data)
+
+    def test_authorize_gdrive_exception_handling(self):
+        """Test exception handling in authorize_gdrive endpoint."""
+        with patch('app.generate_authorization_url') as mock_generate_url:
+            # Configure mock to raise an exception
+            mock_generate_url.side_effect = Exception('Test error')
+
+            # Make request
+            response = self.client.get('/authorize_gdrive')
+
+            # Check response
+            self.assertEqual(response.status_code, 500)
+            response_data = json.loads(response.data)
+            self.assertIn('error', response_data)
+            self.assertEqual(response_data['error']['type'], 'Exception')
+
+    def test_submit_auth_code_exception_handling(self):
+        """Test exception handling in submit_auth_code endpoint."""
+        with patch('app.exchange_code_for_tokens') as mock_exchange:
+            # Configure mock to raise an exception
+            mock_exchange.side_effect = Exception('Test error')
+
+            # Make request
+            response = self.client.post('/submit_auth_code', data={'code': 'test_code'})
+
+            # Check response
+            self.assertEqual(response.status_code, 500)
+            response_data = json.loads(response.data)
+            self.assertIn('error', response_data)
+            self.assertEqual(response_data['error']['type'], 'Exception')
+
+    def test_after_request_middleware(self):
+        """Test after_request middleware logs response information."""
+        with patch('app.logger') as mock_logger:
+            # Make a request
+            response = self.client.get('/info')
+
+            # Check that after_request logging was called
+            self.assertTrue(mock_logger.info.called)
+
+            # Check response is successful
+            self.assertEqual(response.status_code, 200)
 
 
 if __name__ == '__main__':
