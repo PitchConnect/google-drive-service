@@ -129,9 +129,10 @@ The service includes comprehensive health checks:
 ## Security Considerations
 
 ### Automated Scans
-- **Safety**: Checks for known security vulnerabilities in dependencies
+- **Safety**: Checks for known security vulnerabilities in dependencies (using `safety scan`)
 - **Bandit**: Static security analysis for Python code
 - **Container Scanning**: GitHub automatically scans pushed images
+- **Dependency Updates**: Regular security updates are applied to resolve vulnerabilities
 
 ### Access Control
 - **Registry**: GitHub Container Registry with organization access control

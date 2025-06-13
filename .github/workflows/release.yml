@@ -134,7 +134,7 @@ jobs:
       - name: Security scan
         run: |
           pip install safety bandit
-          safety check
+          safety scan --short-report
           bandit -r . -x tests/
 
       - name: Lint code
