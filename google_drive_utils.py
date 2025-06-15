@@ -8,14 +8,19 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import InstalledAppFlow, Flow
 
 from retry_utils import retry, rate_limit, circuit_breaker, detailed_error_response
 
-SCOPES = ['https://www.googleapis.com/auth/drive']
+SCOPES = [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/contacts'
+]
 CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', '/app/credentials/google-credentials.json')
 TOKEN_PATH = os.getenv('GOOGLE_TOKEN_PATH', '/app/data/google-drive-token.json')
-REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob'  # Define redirect URI here
+# Use loopback IP address for OAuth redirect (replaces deprecated OOB flow)
+REDIRECT_URI = 'http://localhost:9085/oauth/callback'
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,10 +44,15 @@ def check_token_exists():
 
 def generate_authorization_url():
     """Generates the Google Drive authorization URL."""
-    flow = InstalledAppFlow.from_client_secrets_file(
-        CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
     try:
-        authorization_url, state = flow.authorization_url(prompt='consent')
+        # Use Flow for web application credentials (supports both "web" and "installed" formats)
+        flow = Flow.from_client_secrets_file(
+            CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
+        authorization_url, state = flow.authorization_url(
+            prompt='consent',
+            access_type='offline',
+            include_granted_scopes='true'
+        )
         return authorization_url
     except Exception as e:
         logger.exception(f"Error generating authorization URL: {e}")
@@ -51,16 +61,23 @@ def generate_authorization_url():
 
 def exchange_code_for_tokens(code):
     """Exchanges the authorization code for access and refresh tokens and saves them."""
-    flow = InstalledAppFlow.from_client_secrets_file(
-        CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
     try:
+        # Use Flow for web application credentials (supports both "web" and "installed" formats)
+        flow = Flow.from_client_secrets_file(
+            CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
+
+        # Exchange the authorization code for tokens
+        # Using multi-scope approach to match shared OAuth client configuration
         flow.fetch_token(code=code)
+
         creds = flow.credentials
         if creds and creds.valid:
             with open(TOKEN_PATH, 'w') as token:
                 token.write(creds.to_json())
+            logger.info("Successfully exchanged authorization code for tokens")
             return True  # Success
         else:
+            logger.error("Failed to get valid credentials from authorization code")
             return False  # Failed to get valid credentials
     except Exception as e:
         logger.exception(f"Error exchanging authorization code for tokens: {e}")

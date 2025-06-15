@@ -4,7 +4,7 @@ import time
 import traceback
 from typing import Dict, Any, Tuple, Optional, Union, List
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, redirect, render_template_string
 from werkzeug.exceptions import HTTPException
 
 from google_drive_utils import (
@@ -155,6 +155,93 @@ def submit_auth_code_endpoint() -> Tuple[Response, int]:
                 'message': str(e)
             }
         }), 500
+
+
+@app.route('/oauth/callback', methods=['GET'])
+def oauth_callback() -> Tuple[Response, int]:
+    """OAuth callback endpoint to handle authorization code from Google."""
+    try:
+        # Get authorization code from query parameters
+        code = request.args.get('code')
+        error = request.args.get('error')
+
+        if error:
+            logger.error(f"OAuth authorization error: {error}")
+            return render_template_string("""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Authorization Failed</title></head>
+            <body>
+                <h1>Authorization Failed</h1>
+                <p>Error: {{ error }}</p>
+                <p>Please try again by visiting <a href="/authorize_gdrive">/authorize_gdrive</a></p>
+            </body>
+            </html>
+            """, error=error), 400
+
+        if not code:
+            logger.warning("No authorization code received in OAuth callback")
+            return render_template_string("""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Authorization Failed</title></head>
+            <body>
+                <h1>Authorization Failed</h1>
+                <p>No authorization code received.</p>
+                <p>Please try again by visiting <a href="/authorize_gdrive">/authorize_gdrive</a></p>
+            </body>
+            </html>
+            """), 400
+
+        logger.info("Received authorization code via OAuth callback")
+        success = exchange_code_for_tokens(code)
+
+        if success:
+            logger.info("Successfully exchanged authorization code for tokens via OAuth callback")
+            return render_template_string("""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Authorization Successful</title></head>
+            <body>
+                <h1>Authorization Successful!</h1>
+                <p>Google Drive access has been granted successfully.</p>
+                <p>You can now close this window and return to your application.</p>
+                <script>
+                    // Auto-close window after 3 seconds
+                    setTimeout(function() {
+                        window.close();
+                    }, 3000);
+                </script>
+            </body>
+            </html>
+            """), 200
+        else:
+            logger.error("Failed to exchange authorization code for tokens via OAuth callback")
+            return render_template_string("""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Authorization Failed</title></head>
+            <body>
+                <h1>Authorization Failed</h1>
+                <p>Failed to exchange authorization code for tokens.</p>
+                <p>Please try again by visiting <a href="/authorize_gdrive">/authorize_gdrive</a></p>
+            </body>
+            </html>
+            """), 500
+
+    except Exception as e:
+        logger.exception(f"Error in OAuth callback: {e}")
+        return render_template_string("""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Authorization Error</title></head>
+        <body>
+            <h1>Authorization Error</h1>
+            <p>An unexpected error occurred: {{ error }}</p>
+            <p>Please try again by visiting <a href="/authorize_gdrive">/authorize_gdrive</a></p>
+        </body>
+        </html>
+        """, error=str(e)), 500
 
 
 @app.route('/upload_file', methods=['POST'])
@@ -418,6 +505,11 @@ def service_info() -> Tuple[Response, int]:
                 "path": "/submit_auth_code",
                 "method": "POST",
                 "description": "Submit authorization code to obtain tokens"
+            },
+            {
+                "path": "/oauth/callback",
+                "method": "GET",
+                "description": "OAuth callback endpoint (used automatically by Google)"
             },
             {
                 "path": "/upload_file",
