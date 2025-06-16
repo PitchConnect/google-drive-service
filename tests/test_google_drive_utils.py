@@ -398,7 +398,7 @@ class TestAuthenticationFunctions(unittest.TestCase):
         self.assertFalse(result)
         mock_exists.assert_called_once()
 
-    @patch('google_drive_utils.InstalledAppFlow.from_client_secrets_file')
+    @patch('google_drive_utils.Flow.from_client_secrets_file')
     def test_generate_authorization_url_success(self, mock_flow_class):
         """Test generate_authorization_url when successful."""
         # Mock the flow instance
@@ -410,9 +410,13 @@ class TestAuthenticationFunctions(unittest.TestCase):
 
         self.assertEqual(result, 'https://accounts.google.com/oauth/authorize?...')
         mock_flow_class.assert_called_once()
-        mock_flow.authorization_url.assert_called_once_with(prompt='consent')
+        mock_flow.authorization_url.assert_called_once_with(
+            prompt='consent',
+            access_type='offline',
+            include_granted_scopes='true'
+        )
 
-    @patch('google_drive_utils.InstalledAppFlow.from_client_secrets_file')
+    @patch('google_drive_utils.Flow.from_client_secrets_file')
     def test_generate_authorization_url_failure(self, mock_flow_class):
         """Test generate_authorization_url when it fails."""
         # Mock the flow to raise an exception during authorization_url call
@@ -425,9 +429,13 @@ class TestAuthenticationFunctions(unittest.TestCase):
 
         self.assertIsNone(result)
         mock_flow_class.assert_called_once()
-        mock_flow.authorization_url.assert_called_once_with(prompt='consent')
+        mock_flow.authorization_url.assert_called_once_with(
+            prompt='consent',
+            access_type='offline',
+            include_granted_scopes='true'
+        )
 
-    @patch('google_drive_utils.InstalledAppFlow.from_client_secrets_file')
+    @patch('google_drive_utils.Flow.from_client_secrets_file')
     @patch('builtins.open', new_callable=unittest.mock.mock_open)
     def test_exchange_code_for_tokens_success(self, mock_open, mock_flow_class):
         """Test exchange_code_for_tokens when successful."""
@@ -446,7 +454,7 @@ class TestAuthenticationFunctions(unittest.TestCase):
         mock_flow.fetch_token.assert_called_once_with(code='test_code')
         mock_open.assert_called_once()
 
-    @patch('google_drive_utils.InstalledAppFlow.from_client_secrets_file')
+    @patch('google_drive_utils.Flow.from_client_secrets_file')
     def test_exchange_code_for_tokens_invalid_credentials(self, mock_flow_class):
         """Test exchange_code_for_tokens with invalid credentials."""
         # Mock the flow instance with invalid credentials
@@ -462,7 +470,7 @@ class TestAuthenticationFunctions(unittest.TestCase):
         mock_flow_class.assert_called_once()
         mock_flow.fetch_token.assert_called_once_with(code='test_code')
 
-    @patch('google_drive_utils.InstalledAppFlow.from_client_secrets_file')
+    @patch('google_drive_utils.Flow.from_client_secrets_file')
     def test_exchange_code_for_tokens_exception(self, mock_flow_class):
         """Test exchange_code_for_tokens when an exception occurs."""
         # Mock the flow to raise an exception
