@@ -728,6 +728,81 @@ class TestUtilityFunctions(unittest.TestCase):
 
         self.assertFalse(result)
 
+    def test_find_folder_id_empty_name(self):
+        """Test find_folder_id with empty folder name."""
+        from google_drive_utils import find_folder_id
+
+        result = find_folder_id(self.mock_drive_service, '', 'parent_id')
+
+        self.assertIsNone(result)
+
+    def test_find_file_id_empty_name(self):
+        """Test find_file_id with empty file name."""
+        from google_drive_utils import find_file_id
+
+        result = find_file_id(self.mock_drive_service, '', 'folder_id')
+
+        self.assertIsNone(result)
+
+    def test_create_folder_empty_name(self):
+        """Test create_folder with empty folder name."""
+        from google_drive_utils import create_folder
+
+        result = create_folder(self.mock_drive_service, '', 'parent_id')
+
+        self.assertIsNone(result)
+
+    def test_delete_folder_by_id_root_folder(self):
+        """Test delete_folder_by_id with root folder ID."""
+        from google_drive_utils import delete_folder_by_id
+
+        result = delete_folder_by_id(self.mock_drive_service, 'root')
+
+        self.assertFalse(result)
+
+    def test_delete_folder_by_path_empty_path(self):
+        """Test delete_folder_by_path with empty path."""
+        from google_drive_utils import delete_folder_by_path
+
+        result = delete_folder_by_path(self.mock_drive_service, '')
+
+        self.assertFalse(result)
+
+    def test_create_folder_if_not_exists_empty_path(self):
+        """Test create_folder_if_not_exists with empty folder path."""
+        from google_drive_utils import create_folder_if_not_exists
+
+        result = create_folder_if_not_exists(self.mock_drive_service, '')
+
+        self.assertEqual(result, 'root')
+
+    def test_delete_folder_by_id_empty_id(self):
+        """Test delete_folder_by_id with empty folder ID."""
+        from google_drive_utils import delete_folder_by_id
+
+        result = delete_folder_by_id(self.mock_drive_service, '')
+
+        self.assertFalse(result)
+
+    @patch('google_drive_utils.os.path.exists')
+    def test_upload_file_to_drive_nonexistent_file(self, mock_exists):
+        """Test upload_file_to_drive with non-existent file."""
+        from google_drive_utils import upload_file_to_drive
+
+        mock_exists.return_value = False
+
+        result = upload_file_to_drive(self.mock_drive_service, '/nonexistent/file.txt', 'folder_id')
+
+        self.assertIsNone(result)
+
+    def test_upload_file_to_drive_empty_folder_id(self):
+        """Test upload_file_to_drive with empty folder ID."""
+        from google_drive_utils import upload_file_to_drive
+
+        result = upload_file_to_drive(self.mock_drive_service, '/tmp/test.txt', '')
+
+        self.assertIsNone(result)
+
 
 if __name__ == '__main__':
     unittest.main()
