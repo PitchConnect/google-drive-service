@@ -1,14 +1,13 @@
 import logging
 import os
-import time
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, Any
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow, Flow
+from google_auth_oauthlib.flow import Flow
 
 from retry_utils import retry, rate_limit, circuit_breaker, detailed_error_response
 
@@ -48,7 +47,7 @@ def generate_authorization_url():
         # Use Flow for web application credentials (supports both "web" and "installed" formats)
         flow = Flow.from_client_secrets_file(
             CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
-        authorization_url, state = flow.authorization_url(
+        authorization_url, _ = flow.authorization_url(
             prompt='consent',
             access_type='offline',
             include_granted_scopes='true'
@@ -445,7 +444,7 @@ def upload_file_to_drive(drive_service: Any, file_path: str, folder_id: str, ove
         media = MediaFileUpload(
             file_path,
             resumable=True,
-            chunksize=1024*1024  # 1MB chunks for better reliability
+            chunksize=1024 * 1024  # 1MB chunks for better reliability
         )
 
         file_metadata = {

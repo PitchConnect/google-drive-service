@@ -2,16 +2,16 @@ import logging
 import os
 import time
 import traceback
-from typing import Dict, Any, Tuple, Optional, Union, List
+from typing import Tuple
 
-from flask import Flask, request, jsonify, Response, redirect, render_template_string
+from flask import Flask, request, jsonify, Response, render_template_string
 from werkzeug.exceptions import HTTPException
 
 from google_drive_utils import (
     authenticate_google_drive, create_folder_if_not_exists, upload_file_to_drive,
     generate_authorization_url, exchange_code_for_tokens, check_token_exists, delete_folder_by_path
 )
-from retry_utils import detailed_error_response
+
 from version import get_version, get_version_info
 
 app = Flask(__name__)
@@ -36,7 +36,7 @@ def before_request() -> None:
     request.request_id = f"{int(time.time())}-{request_count}"
 
     logger.info(f"Request {request.request_id} started: {request.method} {request.path} "
-               f"[{request.remote_addr}]")
+                f"[{request.remote_addr}]")
 
     # Log request data for debugging (excluding file uploads)
     if request.content_type and 'multipart/form-data' not in request.content_type:
@@ -49,7 +49,7 @@ def after_request(response: Response) -> Response:
     if hasattr(request, 'start_time') and hasattr(request, 'request_id'):
         duration = time.time() - request.start_time
         logger.info(f"Request {request.request_id} completed: {response.status_code} "
-                   f"in {duration:.3f}s")
+                    f"in {duration:.3f}s")
     return response
 
 

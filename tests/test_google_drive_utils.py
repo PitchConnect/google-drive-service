@@ -15,7 +15,7 @@ from google_drive_utils import (
 
 
 # Helper function to disable decorators for fast testing
-def no_op_decorator(*args, **kwargs):
+def no_op_decorator(*args, **kwargs):  # noqa: ARG001
     """No-op decorator that returns the function unchanged."""
     def decorator(func):
         return func
@@ -583,7 +583,7 @@ class TestAuthenticationFunctions(unittest.TestCase):
     @patch('google_drive_utils.Credentials.from_authorized_user_file')
     @patch('google_drive_utils.os.path.exists')
     @patch('builtins.open', new_callable=unittest.mock.mock_open)
-    def test_authenticate_google_drive_invalid_grant_error(self, _, mock_exists, mock_creds_from_file, __, mock_remove):
+    def test_authenticate_google_drive_invalid_grant_error(self, mock_open, mock_exists, mock_creds_from_file, mock_build, mock_remove):  # noqa: ARG002
         """Test authenticate_google_drive with invalid_grant error that removes token file."""
         # Mock token file exists
         mock_exists.return_value = True
@@ -680,7 +680,7 @@ class TestUtilityFunctions(unittest.TestCase):
     @patch('google_drive_utils.find_folder_id')
     def test_create_folder_if_not_exists_single_folder(self, mock_find_folder):
         """Test create_folder_if_not_exists with single folder that doesn't exist."""
-        from google_drive_utils import create_folder_if_not_exists, create_folder
+        from google_drive_utils import create_folder_if_not_exists
 
         # Mock folder doesn't exist, then gets created
         mock_find_folder.side_effect = [None, 'new_folder_id']
