@@ -1,0 +1,31 @@
+# Bandit security configuration for google-drive-service
+# https://bandit.readthedocs.io/en/latest/config.html
+
+# Tests to skip (use test IDs or test names)
+skips:
+  # B101: Test for use of assert - acceptable in tests and development
+  - B101
+  # B601: Test for shell injection - we don't use shell commands
+  - B601
+
+# Let bandit run all default tests except those in skips
+# tests: []  # Empty list means run all tests
+
+# Paths to exclude from scanning
+exclude_dirs:
+  - tests
+  - venv
+  - .venv
+  - env
+  - .env
+  - build
+  - dist
+  - htmlcov
+  - .pytest_cache
+  - __pycache__
+
+# Confidence levels: LOW, MEDIUM, HIGH
+confidence: MEDIUM
+
+# Severity levels: LOW, MEDIUM, HIGH
+severity: MEDIUM

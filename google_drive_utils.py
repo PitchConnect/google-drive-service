@@ -1,28 +1,28 @@
 import logging
 import os
-from typing import Optional, Any
+from typing import Any, Optional
 
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import Flow
 
-from retry_utils import retry, rate_limit, circuit_breaker, detailed_error_response
+from retry_utils import circuit_breaker, detailed_error_response, rate_limit, retry
 
 SCOPES = [
-    'https://www.googleapis.com/auth/drive',
-    'https://www.googleapis.com/auth/calendar',
-    'https://www.googleapis.com/auth/contacts'
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/contacts",
 ]
-CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', '/app/credentials/google-credentials.json')
-TOKEN_PATH = os.getenv('GOOGLE_TOKEN_PATH', '/app/data/google-drive-token.json')
+CREDENTIALS_PATH = os.getenv("GOOGLE_CREDENTIALS_PATH", "/app/credentials/google-credentials.json")
+TOKEN_PATH = os.getenv("GOOGLE_TOKEN_PATH", "/app/data/google-drive-token.json")
 # Use loopback IP address for OAuth redirect (replaces deprecated OOB flow)
-REDIRECT_URI = 'http://localhost:9085/oauth/callback'
+REDIRECT_URI = "http://localhost:9085/oauth/callback"
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Constants for error handling
@@ -45,12 +45,9 @@ def generate_authorization_url():
     """Generates the Google Drive authorization URL."""
     try:
         # Use Flow for web application credentials (supports both "web" and "installed" formats)
-        flow = Flow.from_client_secrets_file(
-            CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
+        flow = Flow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
         authorization_url, _ = flow.authorization_url(
-            prompt='consent',
-            access_type='offline',
-            include_granted_scopes='true'
+            prompt="consent", access_type="offline", include_granted_scopes="true"
         )
         return authorization_url
     except Exception as e:
@@ -62,8 +59,7 @@ def exchange_code_for_tokens(code):
     """Exchanges the authorization code for access and refresh tokens and saves them."""
     try:
         # Use Flow for web application credentials (supports both "web" and "installed" formats)
-        flow = Flow.from_client_secrets_file(
-            CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
+        flow = Flow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES, redirect_uri=REDIRECT_URI)
 
         # Exchange the authorization code for tokens
         # Using multi-scope approach to match shared OAuth client configuration
@@ -71,7 +67,7 @@ def exchange_code_for_tokens(code):
 
         creds = flow.credentials
         if creds and creds.valid:
-            with open(TOKEN_PATH, 'w') as token:
+            with open(TOKEN_PATH, "w") as token:
                 token.write(creds.to_json())
             logger.info("Successfully exchanged authorization code for tokens")
             return True  # Success
@@ -108,7 +104,7 @@ def authenticate_google_drive() -> Optional[Any]:
                 logger.info("Refreshing expired credentials")
                 creds.refresh(Request())
                 # Save the refreshed credentials
-                with open(TOKEN_PATH, 'w') as token:
+                with open(TOKEN_PATH, "w") as token:
                     token.write(creds.to_json())
                 logger.info("Credentials refreshed successfully")
             except Exception as e:
@@ -124,7 +120,7 @@ def authenticate_google_drive() -> Optional[Any]:
 
     try:
         logger.debug("Building Google Drive service")
-        service = build('drive', 'v3', credentials=creds)
+        service = build("drive", "v3", credentials=creds)
         # Test the service with a simple request
         service.files().list(pageSize=1).execute()
         logger.info("Google Drive authentication successful")
@@ -162,8 +158,8 @@ def create_folder_if_not_exists(drive_service: Any, folder_path: str) -> Optiona
         logger.error("Cannot create folder: drive_service is None")
         return None
 
-    parent_folder_id = 'root'  # Start at the root of Drive
-    folders = folder_path.strip('/').split('/')  # Split path into folder names
+    parent_folder_id = "root"  # Start at the root of Drive
+    folders = folder_path.strip("/").split("/")  # Split path into folder names
 
     # Skip empty folder names
     folders = [f for f in folders if f]
@@ -220,15 +216,19 @@ def find_folder_id(drive_service: Any, folder_name: str, parent_id: str) -> Opti
 
     try:
         logger.debug(f"Searching for folder '{safe_folder_name}' in parent '{parent_id}'")
-        results = drive_service.files().list(
-            q=f"mimeType='application/vnd.google-apps.folder' and name='{safe_folder_name}' and '{parent_id}' in parents and trashed=false",
-            fields="files(id,name)",
-            pageSize=1  # We only need the first match
-        ).execute()
+        results = (
+            drive_service.files()
+            .list(
+                q=f"mimeType='application/vnd.google-apps.folder' and name='{safe_folder_name}' and '{parent_id}' in parents and trashed=false",
+                fields="files(id,name)",
+                pageSize=1,  # We only need the first match
+            )
+            .execute()
+        )
 
-        items = results.get('files', [])
+        items = results.get("files", [])
         if items:
-            folder_id = items[0]['id']
+            folder_id = items[0]["id"]
             logger.debug(f"Found folder '{safe_folder_name}' with ID: {folder_id}")
             return folder_id
         else:
@@ -267,20 +267,13 @@ def create_folder(drive_service: Any, folder_name: str, parent_id: str) -> Optio
         logger.error("Cannot create folder: folder_name is empty")
         return None
 
-    file_metadata = {
-        'name': folder_name,
-        'mimeType': 'application/vnd.google-apps.folder',
-        'parents': [parent_id]
-    }
+    file_metadata = {"name": folder_name, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]}
 
     try:
         logger.debug(f"Creating folder '{folder_name}' in parent '{parent_id}'")
-        file = drive_service.files().create(
-            body=file_metadata,
-            fields='id,name'
-        ).execute()
+        file = drive_service.files().create(body=file_metadata, fields="id,name").execute()
 
-        folder_id = file.get('id')
+        folder_id = file.get("id")
         logger.info(f"Created folder '{folder_name}' with ID: {folder_id}")
         return folder_id
     except HttpError as error:
@@ -321,15 +314,19 @@ def find_file_id(drive_service: Any, file_name: str, folder_id: str) -> Optional
 
     try:
         logger.debug(f"Searching for file '{safe_file_name}' in folder '{folder_id}'")
-        results = drive_service.files().list(
-            q=f"name='{safe_file_name}' and '{folder_id}' in parents and trashed=false",
-            fields="files(id,name)",
-            pageSize=1  # We only need the first match
-        ).execute()
+        results = (
+            drive_service.files()
+            .list(
+                q=f"name='{safe_file_name}' and '{folder_id}' in parents and trashed=false",
+                fields="files(id,name)",
+                pageSize=1,  # We only need the first match
+            )
+            .execute()
+        )
 
-        items = results.get('files', [])
+        items = results.get("files", [])
         if items:
-            file_id = items[0]['id']
+            file_id = items[0]["id"]
             logger.debug(f"Found file '{safe_file_name}' with ID: {file_id}")
             return file_id
         else:
@@ -441,23 +438,12 @@ def upload_file_to_drive(drive_service: Any, file_path: str, folder_id: str, ove
     # Upload the file
     try:
         # Use resumable upload for all files to handle network interruptions
-        media = MediaFileUpload(
-            file_path,
-            resumable=True,
-            chunksize=1024 * 1024  # 1MB chunks for better reliability
-        )
+        media = MediaFileUpload(file_path, resumable=True, chunksize=1024 * 1024)  # 1MB chunks for better reliability
 
-        file_metadata = {
-            'name': file_name,
-            'parents': [folder_id]
-        }
+        file_metadata = {"name": file_name, "parents": [folder_id]}
 
         logger.debug(f"Starting upload of file '{file_name}'")
-        request = drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id,name,webViewLink,size'
-        )
+        request = drive_service.files().create(body=file_metadata, media_body=media, fields="id,name,webViewLink,size")
 
         # Use resumable upload with progress tracking
         response = None
@@ -472,7 +458,7 @@ def upload_file_to_drive(drive_service: Any, file_path: str, folder_id: str, ove
                     last_progress = progress
 
         logger.info(f"File '{file_name}' uploaded successfully. File ID: {response.get('id')}")
-        return response.get('webViewLink')  # Return the webViewLink (shareable link)
+        return response.get("webViewLink")  # Return the webViewLink (shareable link)
     except HttpError as error:
         error_details = detailed_error_response(error)
         logger.error(f"Google Drive API error during file upload: {error_details}")
@@ -500,8 +486,8 @@ def get_folder_id_by_path(drive_service: Any, folder_path: str) -> Optional[str]
         logger.error("Cannot get folder ID: drive_service is None")
         return None
 
-    parent_folder_id = 'root'  # Start at the root of Drive
-    folders = folder_path.strip('/').split('/')
+    parent_folder_id = "root"  # Start at the root of Drive
+    folders = folder_path.strip("/").split("/")
 
     # Skip empty folder names
     folders = [f for f in folders if f]
@@ -552,7 +538,7 @@ def delete_folder_by_id(drive_service: Any, folder_id: str) -> bool:
         return False
 
     # Don't allow deleting the root folder
-    if folder_id == 'root':
+    if folder_id == "root":
         logger.error("Cannot delete the root folder")
         return False
 
