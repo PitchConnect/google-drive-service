@@ -1,0 +1,86 @@
+[flake8]
+# Maximum line length
+max-line-length = 120
+
+# Error codes to ignore
+extend-ignore =
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # W503: line break before binary operator (conflicts with black)
+    W503,
+    # E501: line too long (handled by black)
+    E501,
+    # D100: Missing docstring in public module
+    D100,
+    # D103: Missing docstring in public function
+    D103,
+    # D200: One-line docstring should fit on one line
+    D200,
+    # D205: 1 blank line required between summary line and description
+    D205,
+    # D212: Multi-line docstring summary should start at the first line
+    D212,
+    # D402: First line should not be the function's "signature"
+    D402,
+    # D403: First word of the first line should be properly capitalized
+    D403,
+    # C901: Function is too complex (we'll address complexity separately)
+    C901,
+    # B007: Loop control variable not used (common in tests)
+    B007,
+    # B017: assertRaises(Exception) should be more specific (test-specific)
+    B017,
+    # F401: imported but unused (common in __init__.py files)
+    F401,
+    # F841: local variable assigned but never used (common in exception handling)
+    F841,
+    # W293: blank line contains whitespace (handled by black)
+    W293
+
+# Directories to exclude from linting
+exclude =
+    .git,
+    __pycache__,
+    .pytest_cache,
+    .coverage,
+    htmlcov,
+    build,
+    dist,
+    venv,
+    .venv,
+    env,
+    .env
+
+# Maximum complexity for functions
+max-complexity = 10
+
+# Docstring conventions
+docstring-convention = google
+
+# Enable specific error codes
+select =
+    # Pyflakes errors
+    F,
+    # Pycodestyle errors
+    E,
+    # Pycodestyle warnings
+    W,
+    # Complexity
+    C,
+    # Docstring errors
+    D,
+    # Bugbear errors
+    B,
+    # Comprehension errors
+    C4,
+    # Simplify errors
+    SIM
+
+# Per-file ignores
+per-file-ignores =
+    # Tests can have longer lines and missing docstrings
+    tests/*:D100,D101,D102,D103,D104,D105,D106,D107,E501
+    # Version file can have missing docstrings
+    version.py:D100,D101,D102,D103,D104,D105,D106,D107
+    # App file can have missing docstrings for simple functions
+    app.py:D103
