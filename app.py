@@ -1,3 +1,15 @@
+"""Google Drive Service - Main application module.
+
+This module provides a Flask-based REST API for interacting with Google Drive,
+including file uploads, folder management, and OAuth authentication.
+
+The service supports:
+- OAuth 2.0 web application flow for Google Drive authentication
+- File upload with optional overwrite functionality
+- Folder creation and deletion
+- Health check endpoints
+- Comprehensive error handling and logging
+"""
 import logging
 import os
 import time

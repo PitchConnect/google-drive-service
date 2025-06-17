@@ -112,6 +112,63 @@ The service requires a `credentials.json` file from the Google Cloud Console wit
 
 ## Development
 
+### Development Setup
+
+This project uses comprehensive code quality tools to maintain high standards. Follow these steps to set up your development environment:
+
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
+   ```
+
+2. **Install pre-commit hooks:**
+   ```bash
+   pre-commit install
+   ```
+
+3. **Verify setup:**
+   ```bash
+   # Run code quality checks
+   pre-commit run --all-files
+
+   # Run tests
+   pytest
+   ```
+
+#### Code Quality Tools
+
+The project includes several automated code quality tools:
+
+- **Black**: Code formatting (120 character line length)
+- **isort**: Import sorting and organization
+- **flake8**: Linting with additional plugins (bugbear, comprehensions, simplify)
+- **bandit**: Security vulnerability scanning
+- **pytest**: Testing with coverage reporting
+
+#### Pre-commit Hooks
+
+Pre-commit hooks automatically run quality checks before each commit:
+
+- Code formatting (black, isort)
+- Linting (flake8)
+- Security scanning (bandit)
+- Test execution (pytest with coverage)
+
+To skip hooks temporarily (not recommended):
+```bash
+git commit --no-verify -m "commit message"
+```
+
+#### CI/CD Pipeline
+
+All pull requests trigger automated quality checks:
+
+- Code formatting verification
+- Linting and security scanning
+- Full test suite execution
+- Coverage reporting
+
 ### Testing
 
 This project includes a comprehensive test suite using pytest. To run the tests:

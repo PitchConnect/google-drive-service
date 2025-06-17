@@ -62,7 +62,7 @@ def is_retryable_error(error: Exception) -> bool:
             for retryable_error in RETRYABLE_GOOGLE_ERRORS:
                 if retryable_error in error_content:
                     return True
-        except:
+        except Exception:  # nosec B110 - Broad exception handling is intentional here
             pass
 
     # Check if it's our custom RetryableError
@@ -138,7 +138,7 @@ def retry(
 
                     logger.warning(
                         f"Retryable error in {func.__name__}: {str(e)}. "
-                        f"Retrying in {delay:.2f}s ({retry_count+1}/{max_retries})"
+                        f"Retrying in {delay:.2f}s ({retry_count + 1}/{max_retries})"
                     )
 
                     # Wait before retrying
@@ -234,12 +234,11 @@ def circuit_breaker(
                 result = func(*args, **kwargs)
 
                 # Success, update state
-                if state["status"] == 2:
+                if state["status"] == 2 and current_time - state["last_success"] > half_open_timeout:
                     # In half-open state, check if we should close the circuit
-                    if current_time - state["last_success"] > half_open_timeout:
-                        logger.info(f"Circuit for {func.__name__} transitioning from half-open to closed")
-                        state["status"] = 0
-                        state["failures"] = 0
+                    logger.info(f"Circuit for {func.__name__} transitioning from half-open to closed")
+                    state["status"] = 0
+                    state["failures"] = 0
 
                 state["last_success"] = current_time
                 return result
@@ -286,7 +285,7 @@ def detailed_error_response(error: Exception) -> Dict[str, Any]:
         response["error"]["status_code"] = error.resp.status
         try:
             response["error"]["details"] = error.content.decode("utf-8")
-        except:
+        except Exception:  # nosec B110 - Broad exception handling is intentional here
             pass
 
     return response

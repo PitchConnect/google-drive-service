@@ -1,3 +1,18 @@
+"""Google Drive utilities module.
+
+This module provides utility functions for interacting with the Google Drive API,
+including authentication, file operations, and folder management.
+
+Key features:
+- OAuth 2.0 authentication with token management
+- Retry logic with exponential backoff for API calls
+- Rate limiting to respect Google API quotas
+- Circuit breaker pattern for fault tolerance
+- Comprehensive error handling and logging
+
+The module supports both web application and installed application OAuth flows,
+with automatic token refresh and error recovery.
+"""
 import logging
 import os
 from typing import Any, Optional
