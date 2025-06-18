@@ -1,8 +1,22 @@
+"""Google Drive Service - Main application module.
+
+This module provides a Flask-based REST API for interacting with Google Drive,
+including file uploads, folder management, and OAuth authentication.
+
+The service supports:
+- OAuth 2.0 web application flow for Google Drive authentication
+- File upload with optional overwrite functionality
+- Folder creation and deletion
+- Health check endpoints
+- Comprehensive error handling and logging
+"""
+
 import logging
 import os
+import tempfile
 import time
 import traceback
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 from flask import Flask, Response, jsonify, render_template_string, request
 from werkzeug.exceptions import HTTPException
@@ -137,7 +151,7 @@ def submit_auth_code_endpoint() -> Tuple[Response, int]:
 
 @app.route("/oauth/callback", methods=["GET"])
 def oauth_callback() -> Tuple[Response, int]:
-    """OAuth callback endpoint to handle authorization code from Google."""
+    """Handle OAuth callback endpoint to process authorization code from Google."""
     try:
         # Get authorization code from query parameters
         code = request.args.get("code")
@@ -249,6 +263,128 @@ def oauth_callback() -> Tuple[Response, int]:
         )
 
 
+def _validate_upload_request() -> Tuple[Optional[list], Optional[str], Optional[bool]]:
+    """Validate upload request parameters.
+
+    Returns:
+        Tuple of (validation_errors, folder_path, overwrite) or (errors, None, None) if invalid
+    """
+    validation_errors = []
+
+    if "file" not in request.files:
+        validation_errors.append({"field": "file", "message": "No file part"})
+    else:
+        file = request.files["file"]
+        if file.filename == "":
+            validation_errors.append({"field": "file", "message": "No selected file"})
+
+    folder_path = request.form.get("folder_path")
+    if not folder_path:
+        validation_errors.append({"field": "folder_path", "message": "Folder path is required"})
+
+    # Get overwrite parameter (default is True)
+    overwrite_param = request.form.get("overwrite", "true").lower()
+    overwrite = overwrite_param != "false"  # Only 'false' will disable overwriting
+
+    if validation_errors:
+        return validation_errors, None, None
+
+    return None, folder_path, overwrite
+
+
+def _handle_file_upload(file, folder_path: str, overwrite: bool) -> Tuple[Optional[str], Optional[str]]:
+    """Handle the actual file upload process.
+
+    Returns:
+        Tuple of (file_url, temp_file_path) or (None, temp_file_path) if failed
+    """
+    # Authenticate with Google Drive
+    logger.info(f"Authenticating with Google Drive for file upload: {file.filename}")
+    drive_service = authenticate_google_drive()
+    if not drive_service:
+        logger.error("Google Drive authentication failed")
+        return None, None
+
+    # Create folder structure if needed
+    logger.info(f"Creating folder structure: {folder_path}")
+    folder_id = create_folder_if_not_exists(drive_service, folder_path)
+    if not folder_id:
+        logger.error(f"Failed to create folder structure: {folder_path}")
+        return None, None
+
+    # Save file to secure temporary location
+    temp_dir = tempfile.gettempdir()  # Get system temp directory securely
+    temp_file_path = os.path.join(temp_dir, f"gdrive_upload_{file.filename}")
+    logger.debug(f"Saving uploaded file to temporary location: {temp_file_path}")
+    file.save(temp_file_path)
+
+    # Upload file to Google Drive
+    logger.info(f"Uploading file to Google Drive: {file.filename} (overwrite={overwrite})")
+    file_url = upload_file_to_drive(drive_service, temp_file_path, folder_id, overwrite=overwrite)
+
+    return file_url, temp_file_path
+
+
+def _create_auth_error_response() -> Tuple[Response, int]:
+    """Create authentication error response."""
+    return (
+        jsonify(
+            {
+                "error": {
+                    "type": "AuthenticationError",
+                    "message": "Authorization required. Please visit /authorize_gdrive first and then "
+                    "/submit_auth_code.",
+                }
+            }
+        ),
+        401,
+    )
+
+
+def _create_validation_error_response(validation_errors: List[str]) -> Tuple[Response, int]:
+    """Create validation error response."""
+    return (
+        jsonify(
+            {
+                "error": {
+                    "type": "ValidationError",
+                    "message": "Invalid request parameters",
+                    "details": validation_errors,
+                }
+            }
+        ),
+        400,
+    )
+
+
+def _create_upload_success_response(
+    file_url: str, filename: str, folder_path: str, overwrite: bool
+) -> Tuple[Response, int]:
+    """Create successful upload response."""
+    return (
+        jsonify(
+            {
+                "status": "success",
+                "file_url": file_url,
+                "file_name": filename,
+                "folder_path": folder_path,
+                "overwrite_mode": "enabled" if overwrite else "disabled",
+            }
+        ),
+        200,
+    )
+
+
+def _cleanup_temp_file(temp_file_path: str) -> None:
+    """Clean up temporary file safely."""
+    if temp_file_path and os.path.exists(temp_file_path):
+        try:
+            logger.debug(f"Removing temporary file: {temp_file_path}")
+            os.remove(temp_file_path)
+        except Exception as cleanup_error:
+            logger.error(f"Failed to remove temporary file: {cleanup_error}")
+
+
 @app.route("/upload_file", methods=["POST"])
 def upload_file_endpoint() -> Tuple[Response, int]:
     """Endpoint to upload a file to Google Drive.
@@ -263,132 +399,52 @@ def upload_file_endpoint() -> Tuple[Response, int]:
         # Check authentication
         if not check_token_exists():
             logger.warning("Upload attempted without authentication")
-            return (
-                jsonify(
-                    {
-                        "error": {
-                            "type": "AuthenticationError",
-                            "message": "Authorization required. Please visit /authorize_gdrive first and then /submit_auth_code.",
-                        }
-                    }
-                ),
-                401,
-            )
+            return _create_auth_error_response()
 
         # Validate request parameters
-        validation_errors = []
-
-        if "file" not in request.files:
-            validation_errors.append({"field": "file", "message": "No file part"})
-        else:
-            file = request.files["file"]
-            if file.filename == "":
-                validation_errors.append({"field": "file", "message": "No selected file"})
-
-        folder_path = request.form.get("folder_path")
-        if not folder_path:
-            validation_errors.append({"field": "folder_path", "message": "Folder path is required"})
-
-        # Return all validation errors at once
+        validation_errors, folder_path, overwrite = _validate_upload_request()
         if validation_errors:
             logger.warning(f"Validation errors in upload request: {validation_errors}")
-            return (
-                jsonify(
-                    {
-                        "error": {
-                            "type": "ValidationError",
-                            "message": "Invalid request parameters",
-                            "details": validation_errors,
-                        }
-                    }
-                ),
-                400,
-            )
-
-        # Get overwrite parameter (default is True)
-        overwrite_param = request.form.get("overwrite", "true").lower()
-        overwrite = overwrite_param != "false"  # Only 'false' will disable overwriting
+            return _create_validation_error_response(validation_errors)
 
         file = request.files["file"]
 
-        # Authenticate with Google Drive
-        logger.info(f"Authenticating with Google Drive for file upload: {file.filename}")
-        drive_service = authenticate_google_drive()
-        if not drive_service:
-            logger.error("Google Drive authentication failed")
-            return (
-                jsonify(
-                    {
-                        "error": {
-                            "type": "AuthenticationError",
-                            "message": "Google Drive authentication failed (tokens invalid or missing). Re-authorize.",
-                        }
-                    }
-                ),
-                500,
-            )
-
-        # Create folder structure if needed
-        logger.info(f"Creating folder structure: {folder_path}")
-        folder_id = create_folder_if_not_exists(drive_service, folder_path)
-        if not folder_id:
-            logger.error(f"Failed to create folder structure: {folder_path}")
-            return (
-                jsonify(
-                    {
-                        "error": {
-                            "type": "FolderCreationError",
-                            "message": f"Failed to create folder structure: {folder_path}",
-                        }
-                    }
-                ),
-                500,
-            )
-
-        # Save file to temporary location
-        temp_file_path = os.path.join("/tmp", file.filename)
-        logger.debug(f"Saving uploaded file to temporary location: {temp_file_path}")
-        file.save(temp_file_path)
-
-        # Upload file to Google Drive
-        logger.info(f"Uploading file to Google Drive: {file.filename} (overwrite={overwrite})")
-        file_url = upload_file_to_drive(drive_service, temp_file_path, folder_id, overwrite=overwrite)
-
-        # Clean up temporary file
-        if temp_file_path and os.path.exists(temp_file_path):
-            logger.debug(f"Removing temporary file: {temp_file_path}")
-            os.remove(temp_file_path)
-            temp_file_path = None
+        # Handle file upload
+        file_url, temp_file_path = _handle_file_upload(file, folder_path, overwrite)
 
         if not file_url:
-            logger.error(f"File upload failed: {file.filename}")
-            return jsonify({"error": {"type": "UploadError", "message": "File upload failed to Google Drive"}}), 500
+            # Handle specific error cases
+            if temp_file_path is None:
+                # Authentication or folder creation failed
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "type": "AuthenticationError",
+                                "message": "Google Drive authentication failed (tokens invalid or missing). "
+                                "Re-authorize.",
+                            }
+                        }
+                    ),
+                    500,
+                )
+            else:
+                # Upload failed
+                logger.error(f"File upload failed: {file.filename}")
+                return jsonify({"error": {"type": "UploadError", "message": "File upload failed to Google Drive"}}), 500
+
+        # Clean up temporary file
+        _cleanup_temp_file(temp_file_path)
 
         # Success response
         logger.info(f"File uploaded successfully: {file.filename}")
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "file_url": file_url,
-                    "file_name": file.filename,
-                    "folder_path": folder_path,
-                    "overwrite_mode": "enabled" if overwrite else "disabled",
-                }
-            ),
-            200,
-        )
+        return _create_upload_success_response(file_url, file.filename, folder_path, overwrite)
 
     except Exception as e:
         logger.exception(f"Error during file upload: {e}")
 
         # Clean up temporary file if it exists
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                logger.debug(f"Removing temporary file after error: {temp_file_path}")
-                os.remove(temp_file_path)
-            except Exception as cleanup_error:
-                logger.error(f"Failed to remove temporary file: {cleanup_error}")
+        _cleanup_temp_file(temp_file_path)
 
         return jsonify({"error": {"type": e.__class__.__name__, "message": str(e)}}), 500
 
@@ -417,7 +473,8 @@ def delete_folder_endpoint() -> Tuple[Response, int]:
                     {
                         "error": {
                             "type": "AuthenticationError",
-                            "message": "Authorization required. Please visit /authorize_gdrive first and then /submit_auth_code.",
+                            "message": "Authorization required. Please visit /authorize_gdrive first and then "
+                            "/submit_auth_code.",
                         }
                     }
                 ),
@@ -552,5 +609,8 @@ if __name__ == "__main__":
     # Get port from environment variable or use default
     port = int(os.environ.get("PORT", 5000))
 
-    logger.info(f"Starting Google Drive Service on port {port} (debug={debug_mode})")
-    app.run(debug=debug_mode, host="0.0.0.0", port=port)
+    # Get host from environment variable or use localhost for security
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")  # Default to localhost for security
+
+    logger.info(f"Starting Google Drive Service on {host}:{port} (debug={debug_mode})")
+    app.run(debug=debug_mode, host=host, port=port)

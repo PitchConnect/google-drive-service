@@ -191,7 +191,7 @@ class TestApp(unittest.TestCase):
         mock_auth.return_value = MagicMock()
         mock_create_folder.return_value = "folder_id"
         mock_upload.return_value = "https://drive.google.com/file/d/123"
-        mock_join.return_value = "/tmp/test_file.txt"
+        mock_join.return_value = "/tmp/gdrive_upload_test_file.txt"
 
         # Create test data
         data = {"folder_path": "test/folder", "file": (io.BytesIO(self.test_file_content), "test_file.txt")}
@@ -207,7 +207,7 @@ class TestApp(unittest.TestCase):
         self.assertEqual(response_data["overwrite_mode"], "enabled")
 
         # Verify temp file was removed
-        mock_remove.assert_called_once_with("/tmp/test_file.txt")
+        mock_remove.assert_called_once_with("/tmp/gdrive_upload_test_file.txt")
 
     @patch("app.check_token_exists")
     @patch("app.authenticate_google_drive")
@@ -224,7 +224,7 @@ class TestApp(unittest.TestCase):
         mock_auth.return_value = MagicMock()
         mock_create_folder.return_value = "folder_id"
         mock_upload.return_value = "https://drive.google.com/file/d/123"
-        mock_join.return_value = "/tmp/test_file.txt"
+        mock_join.return_value = "/tmp/gdrive_upload_test_file.txt"
 
         # Create test data
         data = {
@@ -244,7 +244,9 @@ class TestApp(unittest.TestCase):
         self.assertEqual(response_data["overwrite_mode"], "disabled")
 
         # Verify upload_file_to_drive was called with overwrite=False
-        mock_upload.assert_called_once_with(mock_auth.return_value, "/tmp/test_file.txt", "folder_id", overwrite=False)
+        mock_upload.assert_called_once_with(
+            mock_auth.return_value, "/tmp/gdrive_upload_test_file.txt", "folder_id", overwrite=False
+        )
 
     @patch("app.check_token_exists")
     @patch("app.authenticate_google_drive")

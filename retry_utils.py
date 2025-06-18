@@ -1,12 +1,10 @@
-"""
-Utility functions for implementing retry logic and error handling.
-"""
+"""Utility functions for implementing retry logic and error handling."""
 
+import contextlib
 import functools
 import logging
-import random
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 from googleapiclient.errors import HttpError
 
@@ -62,7 +60,7 @@ def is_retryable_error(error: Exception) -> bool:
             for retryable_error in RETRYABLE_GOOGLE_ERRORS:
                 if retryable_error in error_content:
                     return True
-        except:
+        except Exception:  # nosec B110 - Broad exception handling is intentional here
             pass
 
     # Check if it's our custom RetryableError
@@ -76,6 +74,25 @@ def is_retryable_error(error: Exception) -> bool:
         return True
 
     return False
+
+
+def _should_retry_exception(exception: Exception, retryable_exceptions: Optional[List[type]]) -> bool:
+    """Determine if an exception should trigger a retry."""
+    if retryable_exceptions:
+        return any(isinstance(exception, exc_type) for exc_type in retryable_exceptions)
+    return is_retryable_error(exception)
+
+
+def _calculate_retry_delay(current_delay: float, max_delay: float, backoff_factor: float, jitter: bool) -> float:
+    """Calculate the next retry delay with exponential backoff and optional jitter."""
+    if jitter:
+        # Use time-based jitter instead of random for non-cryptographic purposes
+        jitter_factor = 0.5 + (time.time() % 1) * 0.5  # 0.5 to 1.0 based on current time
+        new_delay = current_delay * backoff_factor * jitter_factor
+    else:
+        new_delay = current_delay * backoff_factor
+
+    return min(max_delay, new_delay)
 
 
 def retry(
@@ -119,11 +136,7 @@ def retry(
                     last_exception = e
 
                     # Determine if we should retry
-                    should_retry = False
-                    if retryable_exceptions:
-                        should_retry = any(isinstance(e, exc_type) for exc_type in retryable_exceptions)
-                    else:
-                        should_retry = is_retryable_error(e)
+                    should_retry = _should_retry_exception(e, retryable_exceptions)
 
                     # If not retryable or we've exhausted retries, re-raise
                     if not should_retry or retry_count >= max_retries:
@@ -131,14 +144,11 @@ def retry(
                         raise
 
                     # Calculate delay with exponential backoff and optional jitter
-                    if jitter:
-                        delay = min(max_delay, delay * backoff_factor * (0.5 + random.random()))
-                    else:
-                        delay = min(max_delay, delay * backoff_factor)
+                    delay = _calculate_retry_delay(delay, max_delay, backoff_factor, jitter)
 
                     logger.warning(
                         f"Retryable error in {func.__name__}: {str(e)}. "
-                        f"Retrying in {delay:.2f}s ({retry_count+1}/{max_retries})"
+                        f"Retrying in {delay:.2f}s ({retry_count + 1}/{max_retries})"
                     )
 
                     # Wait before retrying
@@ -165,7 +175,6 @@ def rate_limit(calls_per_second: float = 1.0, max_burst: int = 1) -> Callable:
     Returns:
         Decorated function with rate limiting
     """
-    min_interval = 1.0 / calls_per_second
     last_called = [0.0]  # Use a list for mutable closure
     tokens = [max_burst]  # Token bucket
 
@@ -234,17 +243,16 @@ def circuit_breaker(
                 result = func(*args, **kwargs)
 
                 # Success, update state
-                if state["status"] == 2:
+                if state["status"] == 2 and current_time - state["last_success"] > half_open_timeout:
                     # In half-open state, check if we should close the circuit
-                    if current_time - state["last_success"] > half_open_timeout:
-                        logger.info(f"Circuit for {func.__name__} transitioning from half-open to closed")
-                        state["status"] = 0
-                        state["failures"] = 0
+                    logger.info(f"Circuit for {func.__name__} transitioning from half-open to closed")
+                    state["status"] = 0
+                    state["failures"] = 0
 
                 state["last_success"] = current_time
                 return result
 
-            except Exception as e:
+            except Exception:
                 # Failure, update state
                 state["failures"] += 1
                 state["last_failure"] = current_time
@@ -270,8 +278,7 @@ def circuit_breaker(
 
 
 def detailed_error_response(error: Exception) -> Dict[str, Any]:
-    """
-    Generate a detailed error response dictionary from an exception.
+    """Generate a detailed error response dictionary from an exception.
 
     Args:
         error: The exception to convert to a response
@@ -284,9 +291,7 @@ def detailed_error_response(error: Exception) -> Dict[str, Any]:
     # Add more details for HttpError
     if isinstance(error, HttpError):
         response["error"]["status_code"] = error.resp.status
-        try:
+        with contextlib.suppress(Exception):
             response["error"]["details"] = error.content.decode("utf-8")
-        except:
-            pass
 
     return response

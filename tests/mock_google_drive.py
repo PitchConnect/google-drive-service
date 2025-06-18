@@ -3,8 +3,6 @@ Mock implementation of Google Drive service for testing.
 This can be used for integration testing without actual Google Drive API calls.
 """
 
-import json
-import os
 import uuid
 from datetime import datetime
 

@@ -235,7 +235,7 @@ class TestCircuitBreaker(unittest.TestCase):
             test_function()
 
         # Third call should raise CircuitBreakerOpenError
-        with self.assertRaises(Exception) as cm:
+        with self.assertRaises(Exception):
             test_function()
 
         # The circuit should be open now

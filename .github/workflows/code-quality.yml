@@ -14,10 +14,10 @@ jobs:
         python-version: [3.9]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
@@ -29,7 +29,7 @@ jobs:
         pip install -r requirements-dev.txt
 
     - name: Set up pre-commit cache
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pre-commit
         key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -59,10 +59,11 @@ jobs:
           echo "No security issues found."
         fi
 
-    - name: Run flake8 linting
+    - name: Run flake8 linting (using .flake8 config)
       run: |
         pip install flake8 flake8-docstrings flake8-bugbear flake8-comprehensions flake8-simplify
-        flake8 . --count --max-line-length=120 --extend-ignore=E203,W503 --show-source --statistics
+        # Use the .flake8 configuration file for consistency with local development
+        flake8 . --count --show-source --statistics
 
     - name: Check import sorting with isort
       run: |
@@ -75,7 +76,7 @@ jobs:
         black --check --diff --line-length 120 .
 
     - name: Upload bandit results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: bandit-security-report
