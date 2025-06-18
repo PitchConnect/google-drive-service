@@ -519,9 +519,7 @@ def _perform_resumable_upload(drive_service: Any, file_path: str, file_name: str
         file_metadata = {"name": file_name, "parents": [folder_id]}
 
         logger.debug(f"Starting upload of file '{file_name}'")
-        request = drive_service.files().create(
-            body=file_metadata, media_body=media, fields="id,name,webViewLink,size"
-        )
+        request = drive_service.files().create(body=file_metadata, media_body=media, fields="id,name,webViewLink,size")
 
         # Use resumable upload with progress tracking
         response = None

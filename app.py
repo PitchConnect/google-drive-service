@@ -383,7 +383,8 @@ def upload_file_endpoint() -> Tuple[Response, int]:
                         {
                             "error": {
                                 "type": "AuthenticationError",
-                                "message": "Google Drive authentication failed (tokens invalid or missing). Re-authorize.",
+                                "message": "Google Drive authentication failed (tokens invalid or missing). "
+                                "Re-authorize.",
                             }
                         }
                     ),

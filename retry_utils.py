@@ -1,6 +1,4 @@
-"""
-Utility functions for implementing retry logic and error handling.
-"""
+"""Utility functions for implementing retry logic and error handling."""
 
 import functools
 import logging
@@ -243,7 +241,7 @@ def circuit_breaker(
                 state["last_success"] = current_time
                 return result
 
-            except Exception as e:
+            except Exception:
                 # Failure, update state
                 state["failures"] += 1
                 state["last_failure"] = current_time
@@ -269,8 +267,7 @@ def circuit_breaker(
 
 
 def detailed_error_response(error: Exception) -> Dict[str, Any]:
-    """
-    Generate a detailed error response dictionary from an exception.
+    """Generate a detailed error response dictionary from an exception.
 
     Args:
         error: The exception to convert to a response
