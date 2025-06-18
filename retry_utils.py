@@ -4,9 +4,8 @@ Utility functions for implementing retry logic and error handling.
 
 import functools
 import logging
-import random
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 from googleapiclient.errors import HttpError
 
@@ -132,7 +131,9 @@ def retry(
 
                     # Calculate delay with exponential backoff and optional jitter
                     if jitter:
-                        delay = min(max_delay, delay * backoff_factor * (0.5 + random.random()))
+                        # Use time-based jitter instead of random for non-cryptographic purposes
+                        jitter_factor = 0.5 + (time.time() % 1) * 0.5  # 0.5 to 1.0 based on current time
+                        delay = min(max_delay, delay * backoff_factor * jitter_factor)
                     else:
                         delay = min(max_delay, delay * backoff_factor)
 
@@ -165,7 +166,6 @@ def rate_limit(calls_per_second: float = 1.0, max_burst: int = 1) -> Callable:
     Returns:
         Decorated function with rate limiting
     """
-    min_interval = 1.0 / calls_per_second
     last_called = [0.0]  # Use a list for mutable closure
     tokens = [max_burst]  # Token bucket
 

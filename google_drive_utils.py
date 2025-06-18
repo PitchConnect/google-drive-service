@@ -95,45 +95,60 @@ def exchange_code_for_tokens(code):
         return False  # Exchange failed
 
 
-@retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
-def authenticate_google_drive() -> Optional[Any]:
-    """Authenticates with Google Drive API using existing tokens if available.
+def _load_existing_credentials() -> Optional[Credentials]:
+    """Load existing credentials from token file.
 
     Returns:
-        Google Drive service object if authentication is successful, None otherwise.
+        Credentials object if successful, None otherwise.
+    """
+    if not os.path.exists(TOKEN_PATH):
+        return None
+
+    try:
+        return Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    except Exception as e:
+        logger.error(f"Error loading credentials from {TOKEN_PATH}: {e}")
+        return None
+
+
+def _refresh_credentials(creds: Credentials) -> Optional[Credentials]:
+    """Refresh expired credentials and save them.
+
+    Args:
+        creds: Expired credentials to refresh.
+
+    Returns:
+        Refreshed credentials if successful, None otherwise.
+    """
+    try:
+        logger.info("Refreshing expired credentials")
+        creds.refresh(Request())
+        # Save the refreshed credentials
+        with open(TOKEN_PATH, "w") as token:
+            token.write(creds.to_json())
+        logger.info("Credentials refreshed successfully")
+        return creds
+    except Exception as e:
+        logger.exception(f"Error refreshing credentials: {e}")
+        # Only remove the token file if it's definitely invalid
+        if "invalid_grant" in str(e).lower() or "invalid_token" in str(e).lower():
+            logger.warning(f"Removing invalid token file: {TOKEN_PATH}")
+            os.remove(TOKEN_PATH)
+        return None
+
+
+def _build_drive_service(creds: Credentials) -> Optional[Any]:
+    """Build and test Google Drive service.
+
+    Args:
+        creds: Valid credentials.
+
+    Returns:
+        Google Drive service object if successful, None otherwise.
 
     Raises:
-        Exception: If authentication fails after retries.
+        Exception: If API call fails after retries.
     """
-    creds = None
-    if os.path.exists(TOKEN_PATH):
-        try:
-            creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
-        except Exception as e:
-            logger.error(f"Error loading credentials from {TOKEN_PATH}: {e}")
-            # Don't delete the token file here, it might be a temporary issue
-            return None
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                logger.info("Refreshing expired credentials")
-                creds.refresh(Request())
-                # Save the refreshed credentials
-                with open(TOKEN_PATH, "w") as token:
-                    token.write(creds.to_json())
-                logger.info("Credentials refreshed successfully")
-            except Exception as e:
-                logger.exception(f"Error refreshing credentials: {e}")
-                # Only remove the token file if it's definitely invalid
-                if "invalid_grant" in str(e).lower() or "invalid_token" in str(e).lower():
-                    logger.warning(f"Removing invalid token file: {TOKEN_PATH}")
-                    os.remove(TOKEN_PATH)
-                return None  # Indicate authentication failure, force re-auth
-        else:
-            logger.info("No valid credentials available, authorization required")
-            return None  # No valid credentials available, force authorization flow
-
     try:
         logger.debug("Building Google Drive service")
         service = build("drive", "v3", credentials=creds)
@@ -156,8 +171,36 @@ def authenticate_google_drive() -> Optional[Any]:
 
 
 @retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
+def authenticate_google_drive() -> Optional[Any]:
+    """Authenticates with Google Drive API using existing tokens if available.
+
+    Returns:
+        Google Drive service object if authentication is successful, None otherwise.
+
+    Raises:
+        Exception: If authentication fails after retries.
+    """
+    # Load existing credentials
+    creds = _load_existing_credentials()
+
+    # Handle invalid or expired credentials
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds = _refresh_credentials(creds)
+            if not creds:
+                return None  # Refresh failed
+        else:
+            logger.info("No valid credentials available, authorization required")
+            return None  # No valid credentials available, force authorization flow
+
+    # Build and test the service
+    return _build_drive_service(creds)
+
+
+@retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
 def create_folder_if_not_exists(drive_service: Any, folder_path: str) -> Optional[str]:
     """Creates folders in Google Drive if they don't exist.
+
     Handles nested folders as well.
 
     Args:
@@ -235,7 +278,8 @@ def find_folder_id(drive_service: Any, folder_name: str, parent_id: str) -> Opti
         results = (
             drive_service.files()
             .list(
-                q=f"mimeType='application/vnd.google-apps.folder' and name='{safe_folder_name}' and '{parent_id}' in parents and trashed=false",
+                q=f"mimeType='application/vnd.google-apps.folder' and name='{safe_folder_name}' and "
+                f"'{parent_id}' in parents and trashed=false",
                 fields="files(id,name)",
                 pageSize=1,  # We only need the first match
             )
@@ -405,61 +449,79 @@ def delete_file_by_id(drive_service: Any, file_id: str) -> bool:
         raise
 
 
-@retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
-@circuit_breaker(failure_threshold=5, reset_timeout=60.0)
-def upload_file_to_drive(drive_service: Any, file_path: str, folder_id: str, overwrite: bool = True) -> Optional[str]:
-    """Uploads a file to Google Drive in the specified folder.
+def _validate_upload_parameters(drive_service: Any, file_path: str, folder_id: str) -> bool:
+    """Validate upload parameters.
 
     Args:
         drive_service: The Google Drive service instance.
         file_path: Path to the file to upload.
         folder_id: ID of the folder to upload to.
-        overwrite: If True, overwrites existing file with the same name. If False, keeps both files.
 
     Returns:
-        The webViewLink (shareable link) of the uploaded file, or None if upload failed.
+        True if all parameters are valid, False otherwise.
+    """
+    if not drive_service:
+        logger.error("Cannot upload file: drive_service is None")
+        return False
+
+    if not os.path.exists(file_path):
+        logger.error(f"Cannot upload file: file '{file_path}' does not exist")
+        return False
+
+    if not folder_id:
+        logger.error("Cannot upload file: folder_id is empty")
+        return False
+
+    return True
+
+
+def _handle_existing_file(drive_service: Any, file_name: str, folder_id: str, overwrite: bool) -> None:
+    """Handle existing file based on overwrite setting.
+
+    Args:
+        drive_service: The Google Drive service instance.
+        file_name: Name of the file to check.
+        folder_id: ID of the folder to search in.
+        overwrite: Whether to overwrite existing files.
+    """
+    if not overwrite:
+        return
+
+    try:
+        existing_file_id = find_file_id(drive_service, file_name, folder_id)
+        if existing_file_id:
+            logger.info(f"Found existing file '{file_name}' with ID {existing_file_id}. Deleting it before upload.")
+            delete_success = delete_file_by_id(drive_service, existing_file_id)
+            if not delete_success:
+                logger.warning(f"Failed to delete existing file '{file_name}'. Proceeding with upload anyway.")
+    except Exception as e:
+        logger.warning(f"Error checking for existing file: {e}. Proceeding with upload anyway.")
+
+
+def _perform_resumable_upload(drive_service: Any, file_path: str, file_name: str, folder_id: str) -> Optional[str]:
+    """Perform the actual file upload with resumable upload and progress tracking.
+
+    Args:
+        drive_service: The Google Drive service instance.
+        file_path: Path to the file to upload.
+        file_name: Name of the file.
+        folder_id: ID of the folder to upload to.
+
+    Returns:
+        The webViewLink of the uploaded file, or None if upload failed.
 
     Raises:
         Exception: If the API call fails after retries.
     """
-    if not drive_service:
-        logger.error("Cannot upload file: drive_service is None")
-        return None
-
-    if not os.path.exists(file_path):
-        logger.error(f"Cannot upload file: file '{file_path}' does not exist")
-        return None
-
-    if not folder_id:
-        logger.error("Cannot upload file: folder_id is empty")
-        return None
-
-    file_name = os.path.basename(file_path)
-    file_size = os.path.getsize(file_path)
-
-    logger.info(f"Preparing to upload file '{file_name}' ({file_size} bytes) to folder '{folder_id}'")
-
-    # Check if file with same name exists and delete it if overwrite is True
-    if overwrite:
-        try:
-            existing_file_id = find_file_id(drive_service, file_name, folder_id)
-            if existing_file_id:
-                logger.info(f"Found existing file '{file_name}' with ID {existing_file_id}. Deleting it before upload.")
-                delete_success = delete_file_by_id(drive_service, existing_file_id)
-                if not delete_success:
-                    logger.warning(f"Failed to delete existing file '{file_name}'. Proceeding with upload anyway.")
-        except Exception as e:
-            logger.warning(f"Error checking for existing file: {e}. Proceeding with upload anyway.")
-
-    # Upload the file
     try:
         # Use resumable upload for all files to handle network interruptions
-        media = MediaFileUpload(file_path, resumable=True, chunksize=1024 * 1024)  # 1MB chunks for better reliability
-
+        media = MediaFileUpload(file_path, resumable=True, chunksize=1024 * 1024)  # 1MB chunks
         file_metadata = {"name": file_name, "parents": [folder_id]}
 
         logger.debug(f"Starting upload of file '{file_name}'")
-        request = drive_service.files().create(body=file_metadata, media_body=media, fields="id,name,webViewLink,size")
+        request = drive_service.files().create(
+            body=file_metadata, media_body=media, fields="id,name,webViewLink,size"
+        )
 
         # Use resumable upload with progress tracking
         response = None
@@ -482,6 +544,39 @@ def upload_file_to_drive(drive_service: Any, file_path: str, folder_id: str, ove
     except Exception as e:
         logger.exception(f"Unexpected error during file upload: {e}")
         raise
+
+
+@retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
+@circuit_breaker(failure_threshold=5, reset_timeout=60.0)
+def upload_file_to_drive(drive_service: Any, file_path: str, folder_id: str, overwrite: bool = True) -> Optional[str]:
+    """Uploads a file to Google Drive in the specified folder.
+
+    Args:
+        drive_service: The Google Drive service instance.
+        file_path: Path to the file to upload.
+        folder_id: ID of the folder to upload to.
+        overwrite: If True, overwrites existing file with the same name. If False, keeps both files.
+
+    Returns:
+        The webViewLink (shareable link) of the uploaded file, or None if upload failed.
+
+    Raises:
+        Exception: If the API call fails after retries.
+    """
+    # Validate parameters
+    if not _validate_upload_parameters(drive_service, file_path, folder_id):
+        return None
+
+    file_name = os.path.basename(file_path)
+    file_size = os.path.getsize(file_path)
+
+    logger.info(f"Preparing to upload file '{file_name}' ({file_size} bytes) to folder '{folder_id}'")
+
+    # Handle existing file based on overwrite setting
+    _handle_existing_file(drive_service, file_name, folder_id, overwrite)
+
+    # Perform the upload
+    return _perform_resumable_upload(drive_service, file_path, file_name, folder_id)
 
 
 @retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
