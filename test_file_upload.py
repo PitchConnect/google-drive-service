@@ -34,7 +34,7 @@ def test_file_upload(base_url, folder_path, overwrite=True):
         if not overwrite:
             data["overwrite"] = "false"
 
-        response = requests.post(f"{base_url}/upload_file", files=files, data=data)
+        response = requests.post(f"{base_url}/upload_file", files=files, data=data, timeout=30)
 
     if response.status_code == 200:
         print(f"First upload successful: {response.json()}")
@@ -53,7 +53,7 @@ def test_file_upload(base_url, folder_path, overwrite=True):
         if not overwrite:
             data["overwrite"] = "false"
 
-        response = requests.post(f"{base_url}/upload_file", files=files, data=data)
+        response = requests.post(f"{base_url}/upload_file", files=files, data=data, timeout=30)
 
     if response.status_code == 200:
         print(f"Second upload successful: {response.json()}")

@@ -313,8 +313,8 @@ def _handle_file_upload(file, folder_path: str, overwrite: bool) -> Tuple[Option
         return None, None
 
     # Save file to secure temporary location
-    with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
-        temp_file_path = temp_file.name
+    temp_dir = tempfile.gettempdir()  # Get system temp directory securely
+    temp_file_path = os.path.join(temp_dir, f"gdrive_upload_{file.filename}")
     logger.debug(f"Saving uploaded file to temporary location: {temp_file_path}")
     file.save(temp_file_path)
 
