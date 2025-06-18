@@ -16,7 +16,7 @@ import os
 import tempfile
 import time
 import traceback
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from flask import Flask, Response, jsonify, render_template_string, request
 from werkzeug.exceptions import HTTPException
@@ -325,6 +325,66 @@ def _handle_file_upload(file, folder_path: str, overwrite: bool) -> Tuple[Option
     return file_url, temp_file_path
 
 
+def _create_auth_error_response() -> Tuple[Response, int]:
+    """Create authentication error response."""
+    return (
+        jsonify(
+            {
+                "error": {
+                    "type": "AuthenticationError",
+                    "message": "Authorization required. Please visit /authorize_gdrive first and then "
+                    "/submit_auth_code.",
+                }
+            }
+        ),
+        401,
+    )
+
+
+def _create_validation_error_response(validation_errors: List[str]) -> Tuple[Response, int]:
+    """Create validation error response."""
+    return (
+        jsonify(
+            {
+                "error": {
+                    "type": "ValidationError",
+                    "message": "Invalid request parameters",
+                    "details": validation_errors,
+                }
+            }
+        ),
+        400,
+    )
+
+
+def _create_upload_success_response(
+    file_url: str, filename: str, folder_path: str, overwrite: bool
+) -> Tuple[Response, int]:
+    """Create successful upload response."""
+    return (
+        jsonify(
+            {
+                "status": "success",
+                "file_url": file_url,
+                "file_name": filename,
+                "folder_path": folder_path,
+                "overwrite_mode": "enabled" if overwrite else "disabled",
+            }
+        ),
+        200,
+    )
+
+
+def _cleanup_temp_file(temp_file_path: str) -> None:
+    """Clean up temporary file safely."""
+    if temp_file_path and os.path.exists(temp_file_path):
+        try:
+            logger.debug(f"Removing temporary file: {temp_file_path}")
+            os.remove(temp_file_path)
+        except Exception as cleanup_error:
+            logger.error(f"Failed to remove temporary file: {cleanup_error}")
+
+
 @app.route("/upload_file", methods=["POST"])
 def upload_file_endpoint() -> Tuple[Response, int]:
     """Endpoint to upload a file to Google Drive.
@@ -339,35 +399,13 @@ def upload_file_endpoint() -> Tuple[Response, int]:
         # Check authentication
         if not check_token_exists():
             logger.warning("Upload attempted without authentication")
-            return (
-                jsonify(
-                    {
-                        "error": {
-                            "type": "AuthenticationError",
-                            "message": "Authorization required. Please visit /authorize_gdrive first and then "
-                            "/submit_auth_code.",
-                        }
-                    }
-                ),
-                401,
-            )
+            return _create_auth_error_response()
 
         # Validate request parameters
         validation_errors, folder_path, overwrite = _validate_upload_request()
         if validation_errors:
             logger.warning(f"Validation errors in upload request: {validation_errors}")
-            return (
-                jsonify(
-                    {
-                        "error": {
-                            "type": "ValidationError",
-                            "message": "Invalid request parameters",
-                            "details": validation_errors,
-                        }
-                    }
-                ),
-                400,
-            )
+            return _create_validation_error_response(validation_errors)
 
         file = request.files["file"]
 
@@ -396,36 +434,17 @@ def upload_file_endpoint() -> Tuple[Response, int]:
                 return jsonify({"error": {"type": "UploadError", "message": "File upload failed to Google Drive"}}), 500
 
         # Clean up temporary file
-        if temp_file_path and os.path.exists(temp_file_path):
-            logger.debug(f"Removing temporary file: {temp_file_path}")
-            os.remove(temp_file_path)
-            temp_file_path = None
+        _cleanup_temp_file(temp_file_path)
 
         # Success response
         logger.info(f"File uploaded successfully: {file.filename}")
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "file_url": file_url,
-                    "file_name": file.filename,
-                    "folder_path": folder_path,
-                    "overwrite_mode": "enabled" if overwrite else "disabled",
-                }
-            ),
-            200,
-        )
+        return _create_upload_success_response(file_url, file.filename, folder_path, overwrite)
 
     except Exception as e:
         logger.exception(f"Error during file upload: {e}")
 
         # Clean up temporary file if it exists
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                logger.debug(f"Removing temporary file after error: {temp_file_path}")
-                os.remove(temp_file_path)
-            except Exception as cleanup_error:
-                logger.error(f"Failed to remove temporary file: {cleanup_error}")
+        _cleanup_temp_file(temp_file_path)
 
         return jsonify({"error": {"type": e.__class__.__name__, "message": str(e)}}), 500
 

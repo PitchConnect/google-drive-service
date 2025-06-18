@@ -66,6 +66,7 @@ def test_file_upload(base_url, folder_path, overwrite=True):
 
 
 def main():
+    """Main function to run file upload tests with command line arguments."""
     parser = argparse.ArgumentParser(description="Test Google Drive Service file upload functionality")
     parser.add_argument("--url", default="http://localhost:5001", help="Base URL of the Google Drive Service")
     parser.add_argument("--folder", default="test_folder", help="Folder path to upload to")

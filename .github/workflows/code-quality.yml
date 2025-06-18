@@ -59,10 +59,11 @@ jobs:
           echo "No security issues found."
         fi
 
-    - name: Run flake8 linting
+    - name: Run flake8 linting (using .flake8 config)
       run: |
         pip install flake8 flake8-docstrings flake8-bugbear flake8-comprehensions flake8-simplify
-        flake8 . --count --max-line-length=120 --extend-ignore=E203,W503 --show-source --statistics
+        # Use the .flake8 configuration file for consistency with local development
+        flake8 . --count --show-source --statistics
 
     - name: Check import sorting with isort
       run: |

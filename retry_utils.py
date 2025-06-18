@@ -1,5 +1,6 @@
 """Utility functions for implementing retry logic and error handling."""
 
+import contextlib
 import functools
 import logging
 import time
@@ -75,6 +76,25 @@ def is_retryable_error(error: Exception) -> bool:
     return False
 
 
+def _should_retry_exception(exception: Exception, retryable_exceptions: Optional[List[type]]) -> bool:
+    """Determine if an exception should trigger a retry."""
+    if retryable_exceptions:
+        return any(isinstance(exception, exc_type) for exc_type in retryable_exceptions)
+    return is_retryable_error(exception)
+
+
+def _calculate_retry_delay(current_delay: float, max_delay: float, backoff_factor: float, jitter: bool) -> float:
+    """Calculate the next retry delay with exponential backoff and optional jitter."""
+    if jitter:
+        # Use time-based jitter instead of random for non-cryptographic purposes
+        jitter_factor = 0.5 + (time.time() % 1) * 0.5  # 0.5 to 1.0 based on current time
+        new_delay = current_delay * backoff_factor * jitter_factor
+    else:
+        new_delay = current_delay * backoff_factor
+
+    return min(max_delay, new_delay)
+
+
 def retry(
     max_retries: int = 3,
     initial_delay: float = 1.0,
@@ -116,11 +136,7 @@ def retry(
                     last_exception = e
 
                     # Determine if we should retry
-                    should_retry = False
-                    if retryable_exceptions:
-                        should_retry = any(isinstance(e, exc_type) for exc_type in retryable_exceptions)
-                    else:
-                        should_retry = is_retryable_error(e)
+                    should_retry = _should_retry_exception(e, retryable_exceptions)
 
                     # If not retryable or we've exhausted retries, re-raise
                     if not should_retry or retry_count >= max_retries:
@@ -128,12 +144,7 @@ def retry(
                         raise
 
                     # Calculate delay with exponential backoff and optional jitter
-                    if jitter:
-                        # Use time-based jitter instead of random for non-cryptographic purposes
-                        jitter_factor = 0.5 + (time.time() % 1) * 0.5  # 0.5 to 1.0 based on current time
-                        delay = min(max_delay, delay * backoff_factor * jitter_factor)
-                    else:
-                        delay = min(max_delay, delay * backoff_factor)
+                    delay = _calculate_retry_delay(delay, max_delay, backoff_factor, jitter)
 
                     logger.warning(
                         f"Retryable error in {func.__name__}: {str(e)}. "
@@ -280,9 +291,7 @@ def detailed_error_response(error: Exception) -> Dict[str, Any]:
     # Add more details for HttpError
     if isinstance(error, HttpError):
         response["error"]["status_code"] = error.resp.status
-        try:
+        with contextlib.suppress(Exception):
             response["error"]["details"] = error.content.decode("utf-8")
-        except Exception:  # nosec B110 - Broad exception handling is intentional here
-            pass
 
     return response
