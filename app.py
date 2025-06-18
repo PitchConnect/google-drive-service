@@ -10,6 +10,7 @@ The service supports:
 - Health check endpoints
 - Comprehensive error handling and logging
 """
+
 import logging
 import os
 import time

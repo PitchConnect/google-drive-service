@@ -86,9 +86,9 @@ jobs:
           sys.path.append('.')
           from version import get_version, get_next_patch_version, get_next_minor_version
           from datetime import datetime
-          
+
           current_version = get_version()
-          
+
           if '${{ github.event_name }}' == 'schedule' or '${{ github.event.inputs.release_type }}' == 'minor':
               new_version = get_next_minor_version()
           elif '${{ github.event.inputs.release_type }}' == 'patch':
@@ -100,10 +100,10 @@ jobs:
                   sys.exit(1)
           else:
               new_version = current_version
-          
+
           print(f'Current version: {current_version}')
           print(f'New version: {new_version}')
-          
+
           with open('$GITHUB_OUTPUT', 'a') as f:
               f.write(f'version={new_version}\n')
           "

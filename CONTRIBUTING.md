@@ -18,7 +18,7 @@ This project maintains high code quality standards through automated tools and p
 The project uses several automated quality tools:
 
 - **Black**: Code formatting (120 char line length)
-- **isort**: Import sorting and organization  
+- **isort**: Import sorting and organization
 - **flake8**: Linting with plugins (bugbear, comprehensions, simplify)
 - **bandit**: Security vulnerability scanning
 - **pytest**: Testing with coverage requirements
@@ -157,7 +157,7 @@ pytest -v
 
 ### Security Scanning
 
-All code is automatically scanned for security vulnerabilities using bandit. 
+All code is automatically scanned for security vulnerabilities using bandit.
 
 ### Acceptable Security Findings
 

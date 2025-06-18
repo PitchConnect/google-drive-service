@@ -52,13 +52,13 @@ jobs:
           import sys
           sys.path.append('.')
           from version import get_version, get_next_patch_version
-          
+
           current_version = get_version()
           hotfix_version = get_next_patch_version()
-          
+
           print(f'Current version: {current_version}')
           print(f'Hotfix version: {hotfix_version}')
-          
+
           with open('$GITHUB_OUTPUT', 'a') as f:
               f.write(f'version={hotfix_version}\n')
               f.write(f'current_version={current_version}\n')
@@ -112,17 +112,17 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             ## Hotfix Release v${{ steps.version.outputs.version }}
-            
+
             **Previous Version:** v${{ steps.version.outputs.current_version }}
-            
+
             ### Hotfix Description
             ${{ github.event.inputs.hotfix_description }}
-            
+
             ### Docker Image
             ```bash
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
             ```
-            
+
             ### Verification
             This hotfix has been automatically tested and verified before release.
           draft: false
