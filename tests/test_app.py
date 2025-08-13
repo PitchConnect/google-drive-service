@@ -16,28 +16,78 @@ class TestApp(unittest.TestCase):
         # Create a test file
         self.test_file_content = b"Test file content"
 
-    def test_health_check_healthy(self):
-        """Test the health check endpoint when the service is healthy."""
+    def test_ping_endpoint(self):
+        """Test the ping endpoint for ultra-lightweight health checks."""
+        response = self.client.get("/ping")
+
+        # Check response
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data.decode(), "OK")
+
+    def test_health_check_basic(self):
+        """Test the basic health check endpoint (no authentication)."""
+        response = self.client.get("/health")
+
+        # Check response
+        self.assertEqual(response.status_code, 200)
+        response_data = json.loads(response.data)
+        self.assertEqual(response_data["status"], "healthy")
+        self.assertEqual(response_data["service"], "google-drive-service")
+        self.assertIn("timestamp", response_data)
+        self.assertIn("version", response_data)
+
+    def test_auth_status_authenticated(self):
+        """Test the auth status endpoint when tokens exist."""
+        with patch("app.check_token_exists") as mock_token_check:
+            # Configure mock to return True (tokens exist)
+            mock_token_check.return_value = True
+
+            # Make request
+            response = self.client.get("/auth/status")
+
+            # Check response
+            self.assertEqual(response.status_code, 200)
+            response_data = json.loads(response.data)
+            self.assertEqual(response_data["status"], "authenticated")
+            self.assertEqual(response_data["auth_status"], "authenticated")
+
+    def test_auth_status_unauthenticated(self):
+        """Test the auth status endpoint when tokens don't exist."""
+        with patch("app.check_token_exists") as mock_token_check:
+            # Configure mock to return False (no tokens)
+            mock_token_check.return_value = False
+
+            # Make request
+            response = self.client.get("/auth/status")
+
+            # Check response
+            self.assertEqual(response.status_code, 200)
+            response_data = json.loads(response.data)
+            self.assertEqual(response_data["status"], "unauthenticated")
+            self.assertEqual(response_data["auth_status"], "unauthenticated")
+
+    def test_service_status_healthy(self):
+        """Test the service status endpoint when the service is healthy."""
         with patch("app.authenticate_google_drive") as mock_auth:
             # Configure mock to return a valid service
             mock_auth.return_value = MagicMock()
 
             # Make request
-            response = self.client.get("/health")
+            response = self.client.get("/service/status")
 
             # Check response
             self.assertEqual(response.status_code, 200)
             response_data = json.loads(response.data)
             self.assertEqual(response_data["status"], "healthy")
 
-    def test_health_check_degraded(self):
-        """Test the health check endpoint when authentication is required."""
+    def test_service_status_degraded(self):
+        """Test the service status endpoint when authentication is required."""
         with patch("app.authenticate_google_drive") as mock_auth:
             # Configure mock to return None (auth required)
             mock_auth.return_value = None
 
             # Make request
-            response = self.client.get("/health")
+            response = self.client.get("/service/status")
 
             # Check response
             self.assertEqual(response.status_code, 200)
@@ -45,14 +95,14 @@ class TestApp(unittest.TestCase):
             self.assertEqual(response_data["status"], "degraded")
             self.assertEqual(response_data["reason"], "auth_required")
 
-    def test_health_check_unhealthy(self):
-        """Test the health check endpoint when an error occurs."""
+    def test_service_status_unhealthy(self):
+        """Test the service status endpoint when an error occurs."""
         with patch("app.authenticate_google_drive") as mock_auth:
             # Configure mock to raise an exception
             mock_auth.side_effect = Exception("Test error")
 
             # Make request
-            response = self.client.get("/health")
+            response = self.client.get("/service/status")
 
             # Check response
             self.assertEqual(response.status_code, 500)
