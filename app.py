@@ -522,15 +522,80 @@ def delete_folder_endpoint() -> Tuple[Response, int]:
         return jsonify({"error": {"type": e.__class__.__name__, "message": str(e)}}), 500
 
 
-@app.route("/health")
-def health_check() -> Tuple[Response, int]:
-    """Health check endpoint to verify service status.
+@app.route("/ping")
+def ping() -> Tuple[Response, int]:
+    """Ultra-lightweight health check for Docker and load balancers.
+
+    This endpoint performs no authentication or external API calls.
+    It only verifies that the Flask application is running and responsive.
 
     Returns:
-        JSON response with service health status:
-        - healthy: Service is fully operational
-        - degraded: Service is running but with limited functionality
-        - unhealthy: Service is not operational
+        Simple "OK" response with 200 status code
+    """
+    return "OK", 200
+
+
+@app.route("/health")
+def health_check() -> Tuple[Response, int]:
+    """Basic health check endpoint with minimal overhead.
+
+    This endpoint checks service availability without performing authentication
+    or external API calls. For authentication status, use /auth/status.
+    For full service validation, use /service/status.
+
+    Returns:
+        JSON response with basic service health status
+    """
+    response = {
+        "service": "google-drive-service",
+        "timestamp": time.time(),
+        "version": get_version(),
+        "status": "healthy",
+    }
+
+    return jsonify(response), 200
+
+
+@app.route("/auth/status")
+def auth_status() -> Tuple[Response, int]:
+    """Check authentication status without performing authentication.
+
+    This endpoint only checks if authentication tokens exist on disk.
+    It does not perform OAuth flows or make API calls to Google Drive.
+
+    Returns:
+        JSON response with authentication status
+    """
+    response = {"service": "google-drive-service", "timestamp": time.time(), "version": get_version()}
+
+    # Check if token file exists (no authentication performed)
+    token_exists = check_token_exists()
+    response["auth_status"] = "authenticated" if token_exists else "unauthenticated"
+
+    if token_exists:
+        response["status"] = "authenticated"
+        response["message"] = "Authentication tokens are available"
+    else:
+        response["status"] = "unauthenticated"
+        response["message"] = "Authentication required. Visit /authorize_gdrive to authenticate."
+
+    return jsonify(response), 200
+
+
+@app.route("/service/status")
+def service_status() -> Tuple[Response, int]:
+    """Full service validation including authentication and API connectivity.
+
+    This endpoint performs complete service validation including:
+    - Authentication with Google Drive
+    - API connectivity test
+    - Full service functionality check
+
+    Use this endpoint sparingly as it performs actual authentication and API calls.
+    For regular health checks, use /health or /ping instead.
+
+    Returns:
+        JSON response with complete service status
     """
     response = {"service": "google-drive-service", "timestamp": time.time(), "version": get_version()}
 
@@ -538,7 +603,7 @@ def health_check() -> Tuple[Response, int]:
     token_exists = check_token_exists()
     response["auth_status"] = "authenticated" if token_exists else "unauthenticated"
 
-    # Check if Google Drive API is accessible
+    # Perform full authentication and API connectivity check
     try:
         start_time = time.time()
         drive_service = authenticate_google_drive()
@@ -550,6 +615,7 @@ def health_check() -> Tuple[Response, int]:
             drive_service.files().list(pageSize=1).execute()
             response["status"] = "healthy"
             response["api_connectivity"] = True
+            response["message"] = "Service is fully operational"
             return jsonify(response), 200
         else:
             response["status"] = "degraded"
@@ -562,7 +628,7 @@ def health_check() -> Tuple[Response, int]:
         response["reason"] = str(e)
         response["api_connectivity"] = False
         response["error_type"] = e.__class__.__name__
-        logger.error(f"Health check failed: {e}")
+        logger.error(f"Service status check failed: {e}")
         return jsonify(response), 500
 
 
