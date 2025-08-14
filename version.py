@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 
 # Current version - update this for releases
-__version__ = "2025.08.1"
+__version__ = "2025.08.3"
 
 
 def get_version():
@@ -53,34 +53,58 @@ def get_next_minor_version():
 def get_next_version_safe():
     """Get the next safe version that won't conflict with existing tags."""
     import subprocess
+    import re
 
     try:
-        # Try to get the latest tag
+        # Get ALL tags and find the highest version
         result = subprocess.run(
-            ["git", "describe", "--tags", "--abbrev=0"],
+            ["git", "tag", "-l"],
             capture_output=True,
             text=True,
             cwd=os.path.dirname(__file__) if __file__ else "."
         )
 
         if result.returncode == 0:
-            latest_tag = result.stdout.strip().lstrip('v')
-            tag_parts = latest_tag.split('.')
+            all_tags = result.stdout.strip().split('\n')
+            version_tags = []
 
-            if len(tag_parts) == 3:
-                tag_year, tag_month, tag_patch = tag_parts
+            # Filter and parse version tags
+            for tag in all_tags:
+                if tag.startswith('v') and re.match(r'^v\d{4}\.\d{1,2}\.\d+$', tag):
+                    version_str = tag.lstrip('v')
+                    parts = version_str.split('.')
+                    if len(parts) == 3:
+                        try:
+                            year, month, patch = int(parts[0]), int(parts[1]), int(parts[2])
+                            version_tags.append((year, month, patch, version_str))
+                        except ValueError:
+                            continue
+
+            if version_tags:
+                # Sort by version (year, month, patch) and get the highest
+                version_tags.sort(reverse=True)
+                highest_year, highest_month, highest_patch, highest_version = version_tags[0]
+
+                # Get current version parts
                 current_parts = __version__.split('.')
-
                 if len(current_parts) == 3:
-                    curr_year, curr_month, curr_patch = current_parts
+                    try:
+                        curr_year, curr_month, curr_patch = int(current_parts[0]), int(current_parts[1]), int(current_parts[2])
 
-                    # If current version is behind the latest tag, sync to tag + 1
-                    if (curr_year, curr_month, int(curr_patch)) <= (tag_year, tag_month, int(tag_patch)):
-                        return f"{tag_year}.{tag_month}.{int(tag_patch) + 1}"
+                        # Find the next safe version
+                        if (curr_year, curr_month, curr_patch) <= (highest_year, highest_month, highest_patch):
+                            # Current version is behind or equal to highest tag, increment from highest tag
+                            return f"{highest_year}.{highest_month:02d}.{highest_patch + 1}"
+                        else:
+                            # Current version is ahead, use current + 1
+                            return f"{curr_year}.{curr_month:02d}.{curr_patch + 1}"
+                    except ValueError:
+                        pass
 
         # Fallback to normal patch increment
         return get_next_patch_version()
 
-    except Exception:
+    except Exception as e:
         # If git operations fail, fallback to normal patch increment
+        print(f"Warning: Git operation failed in get_next_version_safe: {e}")
         return get_next_patch_version()

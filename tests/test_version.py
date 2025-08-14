@@ -3,11 +3,12 @@ Tests for version module.
 """
 
 import os
+import subprocess
 import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from version import __version__, get_next_patch_version, get_version, get_version_info
+from version import __version__, get_next_patch_version, get_next_version_safe, get_version, get_version_info
 
 
 class TestVersionModule(unittest.TestCase):
@@ -154,6 +155,77 @@ class TestVersionModule(unittest.TestCase):
 
         # Should match what get_version() returns
         self.assertEqual(__version__, get_version())
+
+    @patch("subprocess.run")
+    def test_get_next_version_safe_with_existing_tags(self, mock_run):
+        """Test get_next_version_safe with existing git tags."""
+        # Mock git tag -l output
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "v2025.08.0\nv2025.08.2\nv2025.07.0\nv2025.01.1\n"
+
+        with patch("version.__version__", "2025.08.1"):
+            next_version = get_next_version_safe()
+            # Should return 2025.08.3 (highest tag v2025.08.2 + 1)
+            self.assertEqual(next_version, "2025.08.3")
+
+    @patch("subprocess.run")
+    def test_get_next_version_safe_current_ahead(self, mock_run):
+        """Test get_next_version_safe when current version is ahead of tags."""
+        # Mock git tag -l output
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "v2025.07.0\nv2025.01.1\n"
+
+        with patch("version.__version__", "2025.08.5"):
+            next_version = get_next_version_safe()
+            # Should return 2025.08.6 (current + 1)
+            self.assertEqual(next_version, "2025.08.6")
+
+    @patch("subprocess.run")
+    def test_get_next_version_safe_no_tags(self, mock_run):
+        """Test get_next_version_safe with no existing tags."""
+        # Mock git tag -l output (empty)
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = ""
+
+        with patch("version.__version__", "2025.08.1"):
+            next_version = get_next_version_safe()
+            # Should fallback to normal patch increment
+            self.assertEqual(next_version, "2025.08.2")
+
+    @patch("subprocess.run")
+    def test_get_next_version_safe_git_failure(self, mock_run):
+        """Test get_next_version_safe when git command fails."""
+        # Mock git command failure
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+
+        with patch("version.__version__", "2025.08.1"):
+            next_version = get_next_version_safe()
+            # Should fallback to normal patch increment
+            self.assertEqual(next_version, "2025.08.2")
+
+    @patch("subprocess.run")
+    def test_get_next_version_safe_invalid_tags(self, mock_run):
+        """Test get_next_version_safe with invalid tag formats."""
+        # Mock git tag -l output with invalid tags
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "v2025.08.0\ninvalid-tag\nv1.0.0\nrelease-1.0\n"
+
+        with patch("version.__version__", "2025.08.1"):
+            next_version = get_next_version_safe()
+            # Should only consider valid tags (v2025.08.0) and return 2025.08.2
+            self.assertEqual(next_version, "2025.08.2")
+
+    @patch("subprocess.run")
+    def test_get_next_version_safe_exception_handling(self, mock_run):
+        """Test get_next_version_safe exception handling."""
+        # Mock subprocess to raise an exception
+        mock_run.side_effect = Exception("Git command failed")
+
+        with patch("version.__version__", "2025.08.1"):
+            next_version = get_next_version_safe()
+            # Should fallback to normal patch increment
+            self.assertEqual(next_version, "2025.08.2")
 
 
 if __name__ == "__main__":
