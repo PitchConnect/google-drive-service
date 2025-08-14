@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 
 # Current version - update this for releases
-__version__ = "2025.08.1"
+__version__ = "2025.08.2"
 
 
 def get_version():
