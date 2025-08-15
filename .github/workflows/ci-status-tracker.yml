@@ -2,47 +2,69 @@ name: CI Status Tracker
 
 on:
   workflow_run:
-    workflows: ["*"]
+    workflows: ["Run Tests", "Code Quality", "PR Tracker"]
     types: [completed]
 
 jobs:
   get_pr_info:
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion != 'skipped' && github.event.workflow_run.pull_requests != null && github.event.workflow_run.pull_requests != '[]'
+    if: github.event.workflow_run.conclusion != 'skipped'
     outputs:
       pr_number: ${{ steps.pr-info.outputs.PR_NUMBER }}
       ci_status: ${{ github.event.workflow_run.conclusion }}
+      has_pr: ${{ steps.pr-info.outputs.HAS_PR }}
     steps:
       - name: Get PR information
         id: pr-info
         run: |
           PR_ARRAY='${{ toJson(github.event.workflow_run.pull_requests) }}'
+          echo "Workflow: ${{ github.event.workflow_run.name }}"
+          echo "Event: ${{ github.event.workflow_run.event }}"
+          echo "PR Array: $PR_ARRAY"
+
           if [ "$PR_ARRAY" != "[]" ] && [ "$PR_ARRAY" != "null" ]; then
             PR_NUMBER=$(echo "$PR_ARRAY" | jq -r '.[0].number // empty')
             if [ -n "$PR_NUMBER" ]; then
               echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
-              echo "Processing PR #$PR_NUMBER with CI status: ${{ github.event.workflow_run.conclusion }}"
+              echo "HAS_PR=true" >> $GITHUB_OUTPUT
+              echo "✅ Processing PR #$PR_NUMBER with CI status: ${{ github.event.workflow_run.conclusion }}"
             else
-              echo "No valid PR number found"
-              exit 1
+              echo "HAS_PR=false" >> $GITHUB_OUTPUT
+              echo "⚠️ No valid PR number found in PR array"
             fi
           else
-            echo "No pull requests associated with this workflow run"
-            exit 1
+            echo "HAS_PR=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No pull requests associated with this workflow run (likely manual trigger)"
+            echo "This is normal for workflow_dispatch events like manual releases"
           fi
 
   track_ci_status:
     needs: get_pr_info
+    if: needs.get_pr_info.outputs.has_pr == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Log CI Status
         run: |
-          echo "CI Status Tracking"
+          echo "🔍 CI Status Tracking for PR-based Workflow"
           echo "PR Number: ${{ needs.get_pr_info.outputs.pr_number }}"
           echo "CI Status: ${{ needs.get_pr_info.outputs.ci_status }}"
           echo "Workflow: ${{ github.event.workflow_run.name }}"
           echo "Repository: ${{ github.repository }}"
+          echo "Event Type: ${{ github.event.workflow_run.event }}"
 
           # Note: Original workflow reference was broken
           # PitchConnect/.github/.github/workflows/ci-failure-tracker.yml@main does not exist
           # This job now logs the CI status instead of calling the non-existent workflow
+
+  skip_tracking:
+    needs: get_pr_info
+    if: needs.get_pr_info.outputs.has_pr != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip CI Status Tracking
+        run: |
+          echo "ℹ️ Skipping CI Status Tracking"
+          echo "Reason: No pull requests associated with this workflow run"
+          echo "Workflow: ${{ github.event.workflow_run.name }}"
+          echo "Event Type: ${{ github.event.workflow_run.event }}"
+          echo "This is normal for manual releases (workflow_dispatch) and scheduled workflows"
