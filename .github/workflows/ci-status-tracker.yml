@@ -33,10 +33,16 @@ jobs:
 
   track_ci_status:
     needs: get_pr_info
-    uses: PitchConnect/.github/.github/workflows/ci-failure-tracker.yml@main
-    with:
-      project_id: 'PVT_kwDODF_kVc4A4M8N'
-      project_number: 3
-      ci_status: ${{ needs.get_pr_info.outputs.ci_status }}
-    secrets:
-      token: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log CI Status
+        run: |
+          echo "CI Status Tracking"
+          echo "PR Number: ${{ needs.get_pr_info.outputs.pr_number }}"
+          echo "CI Status: ${{ needs.get_pr_info.outputs.ci_status }}"
+          echo "Workflow: ${{ github.event.workflow_run.name }}"
+          echo "Repository: ${{ github.repository }}"
+
+          # Note: Original workflow reference was broken
+          # PitchConnect/.github/.github/workflows/ci-failure-tracker.yml@main does not exist
+          # This job now logs the CI status instead of calling the non-existent workflow
