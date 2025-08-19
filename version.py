@@ -3,6 +3,9 @@ Version management for Google Drive Service.
 """
 
 import os
+import re
+import shutil
+import subprocess  # nosec B404 - controlled use to query git tags (no shell, constant args)
 from datetime import datetime
 
 # Current version - update this for releases
@@ -52,27 +55,30 @@ def get_next_minor_version():
 
 def get_next_version_safe():
     """Get the next safe version that won't conflict with existing tags."""
-    import subprocess
-    import re
-
     try:
+        # Resolve full path to git to avoid partial path issues (Bandit B607)
+        git_executable = shutil.which("git")
+        if not git_executable:
+            # If git is not available, fall back safely
+            return get_next_patch_version()
+
         # Get ALL tags and find the highest version
-        result = subprocess.run(
-            ["git", "tag", "-l"],
+        result = subprocess.run(  # nosec B603 - constant args, no user input, shell not used
+            [git_executable, "tag", "-l"],
             capture_output=True,
             text=True,
-            cwd=os.path.dirname(__file__) if __file__ else "."
+            cwd=os.path.dirname(__file__) if __file__ else ".",
         )
 
         if result.returncode == 0:
-            all_tags = result.stdout.strip().split('\n')
+            all_tags = result.stdout.strip().split("\n")
             version_tags = []
 
             # Filter and parse version tags
             for tag in all_tags:
-                if tag.startswith('v') and re.match(r'^v\d{4}\.\d{1,2}\.\d+$', tag):
-                    version_str = tag.lstrip('v')
-                    parts = version_str.split('.')
+                if tag.startswith("v") and re.match(r"^v\d{4}\.\d{1,2}\.\d+$", tag):
+                    version_str = tag.lstrip("v")
+                    parts = version_str.split(".")
                     if len(parts) == 3:
                         try:
                             year, month, patch = int(parts[0]), int(parts[1]), int(parts[2])
@@ -86,10 +92,14 @@ def get_next_version_safe():
                 highest_year, highest_month, highest_patch, highest_version = version_tags[0]
 
                 # Get current version parts
-                current_parts = __version__.split('.')
+                current_parts = __version__.split(".")
                 if len(current_parts) == 3:
                     try:
-                        curr_year, curr_month, curr_patch = int(current_parts[0]), int(current_parts[1]), int(current_parts[2])
+                        curr_year, curr_month, curr_patch = (
+                            int(current_parts[0]),
+                            int(current_parts[1]),
+                            int(current_parts[2]),
+                        )
 
                         # Find the next safe version
                         if (curr_year, curr_month, curr_patch) <= (highest_year, highest_month, highest_patch):
