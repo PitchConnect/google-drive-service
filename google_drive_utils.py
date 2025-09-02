@@ -25,6 +25,24 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
+# Import enhanced logging and error handling
+try:
+    from src.core import (
+        DriveAPIError,
+        DriveAuthenticationError,
+        DriveFileError,
+        DriveFolderError,
+        get_logger,
+        handle_drive_operations,
+        log_drive_metrics,
+        safe_drive_operation,
+        validate_drive_parameters,
+    )
+
+    HAS_ENHANCED_LOGGING = True
+except ImportError:
+    HAS_ENHANCED_LOGGING = False
+
 from retry_utils import circuit_breaker, detailed_error_response, rate_limit, retry
 
 SCOPES = [
@@ -37,9 +55,13 @@ TOKEN_PATH = os.getenv("GOOGLE_TOKEN_PATH", "/app/data/google-drive-token.json")
 # Use loopback IP address for OAuth redirect (replaces deprecated OOB flow)
 REDIRECT_URI = "http://localhost:9085/oauth/callback"
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+# Configure enhanced logging
+if HAS_ENHANCED_LOGGING:
+    logger = get_logger(__name__, "drive_utils")
+else:
+    # Fallback to basic logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logger = logging.getLogger(__name__)
 
 # Constants for error handling
 MAX_RETRIES = 3
@@ -171,8 +193,9 @@ def _build_drive_service(creds: Credentials) -> Optional[Any]:
 
 
 @retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
+@handle_drive_operations("authenticate_google_drive", "auth") if HAS_ENHANCED_LOGGING else lambda f: f
 def authenticate_google_drive() -> Optional[Any]:
-    """Authenticates with Google Drive API using existing tokens if available.
+    """Authenticates with Google Drive API using existing tokens if available with enhanced logging.
 
     Returns:
         Google Drive service object if authentication is successful, None otherwise.
@@ -198,8 +221,9 @@ def authenticate_google_drive() -> Optional[Any]:
 
 
 @retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
+@handle_drive_operations("create_folder_if_not_exists", "folder_ops") if HAS_ENHANCED_LOGGING else lambda f: f
 def create_folder_if_not_exists(drive_service: Any, folder_path: str) -> Optional[str]:
-    """Creates folders in Google Drive if they don't exist.
+    """Creates folders in Google Drive if they don't exist with enhanced logging.
 
     Handles nested folders as well.
 
@@ -545,9 +569,9 @@ def _perform_resumable_upload(drive_service: Any, file_path: str, file_name: str
 
 
 @retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
-@circuit_breaker(failure_threshold=5, reset_timeout=60.0)
+@handle_drive_operations("upload_file_to_drive", "file_ops") if HAS_ENHANCED_LOGGING else lambda f: f
 def upload_file_to_drive(drive_service: Any, file_path: str, folder_id: str, overwrite: bool = True) -> Optional[str]:
-    """Uploads a file to Google Drive in the specified folder.
+    """Uploads a file to Google Drive in the specified folder with enhanced logging.
 
     Args:
         drive_service: The Google Drive service instance.
@@ -677,8 +701,9 @@ def delete_folder_by_id(drive_service: Any, folder_id: str) -> bool:
 
 
 @retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
+@handle_drive_operations("delete_folder_by_path", "folder_ops") if HAS_ENHANCED_LOGGING else lambda f: f
 def delete_folder_by_path(drive_service: Any, folder_path: str) -> bool:
-    """Deletes a folder in Google Drive given its full path.
+    """Deletes a folder in Google Drive given its full path with enhanced logging.
 
     Args:
         drive_service: The Google Drive service instance.

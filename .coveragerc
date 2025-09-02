@@ -3,6 +3,7 @@ source = .
 omit =
     tests/*
     test_*.py
+    debug_ci.py
     */__pycache__/*
     .pytest_cache/*
     htmlcov/*
