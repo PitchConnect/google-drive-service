@@ -59,6 +59,12 @@ class DriveCircuitBreaker:
     """Circuit breaker for Google Drive operations."""
     
     def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
+        """Initialize the circuit breaker.
+
+        Args:
+            failure_threshold: Number of failures before opening circuit
+            recovery_timeout: Seconds to wait before attempting recovery
+        """
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.failure_count = 0
@@ -270,29 +276,26 @@ def validate_drive_parameters(
     Raises:
         ConfigurationError: If parameters are invalid
     """
-    if file_path is not None:
-        if not isinstance(file_path, str) or not file_path.strip():
-            raise ConfigurationError("file_path must be a non-empty string")
-    
-    if folder_path is not None:
-        if not isinstance(folder_path, str) or not folder_path.strip():
-            raise ConfigurationError("folder_path must be a non-empty string")
-    
+    if file_path is not None and (not isinstance(file_path, str) or not file_path.strip()):
+        raise ConfigurationError("file_path must be a non-empty string")
+
+    if folder_path is not None and (not isinstance(folder_path, str) or not folder_path.strip()):
+        raise ConfigurationError("folder_path must be a non-empty string")
+
     if file_id is not None:
         if not isinstance(file_id, str) or not file_id.strip():
             raise ConfigurationError("file_id must be a non-empty string")
         if len(file_id) < 10:  # Google Drive IDs are typically much longer
             raise ConfigurationError("file_id appears to be invalid (too short)")
-    
+
     if folder_id is not None:
         if not isinstance(folder_id, str) or not folder_id.strip():
             raise ConfigurationError("folder_id must be a non-empty string")
         if len(folder_id) < 10:  # Google Drive IDs are typically much longer
             raise ConfigurationError("folder_id appears to be invalid (too short)")
-    
-    if service is not None:
-        if not hasattr(service, 'files'):
-            raise ConfigurationError("service must be a valid Google Drive service instance")
+
+    if service is not None and not hasattr(service, 'files'):
+        raise ConfigurationError("service must be a valid Google Drive service instance")
 
 
 def _convert_http_error(http_error: HttpError, operation: str) -> DriveOperationError:

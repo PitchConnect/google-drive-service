@@ -18,6 +18,11 @@ class GoogleDriveFormatter(logging.Formatter):
     """Enhanced formatter for Google Drive service with structured output."""
     
     def __init__(self, enable_structured: bool = True):
+        """Initialize the formatter.
+
+        Args:
+            enable_structured: Whether to enable structured logging format
+        """
         self.enable_structured = enable_structured
         super().__init__()
     
@@ -149,7 +154,7 @@ def configure_logging(
     if enable_file:
         file_handler = logging.handlers.RotatingFileHandler(
             os.path.join(log_dir, log_file),
-            maxBytes=10*1024*1024,  # 10MB
+            maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=5
         )
         file_handler.setFormatter(formatter)

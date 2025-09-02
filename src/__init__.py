@@ -1,5 +1,5 @@
 """
-Google Drive Service
+Google Drive Service.
 
 Enhanced with v2.1.0 logging and error handling capabilities for Google Drive operations.
 """
