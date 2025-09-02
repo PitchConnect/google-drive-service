@@ -21,6 +21,21 @@ from typing import List, Optional, Tuple
 from flask import Flask, Response, jsonify, render_template_string, request
 from werkzeug.exceptions import HTTPException
 
+# Import enhanced logging and error handling
+try:
+    from src.core import (
+        configure_logging,
+        get_logger,
+        handle_api_errors,
+        DriveOperationError,
+        DriveAuthenticationError,
+        ConfigurationError,
+        validate_drive_parameters,
+    )
+    HAS_ENHANCED_LOGGING = True
+except ImportError:
+    HAS_ENHANCED_LOGGING = False
+
 from google_drive_utils import (
     authenticate_google_drive,
     check_token_exists,
@@ -34,10 +49,22 @@ from version import get_version, get_version_info
 
 app = Flask(__name__)
 
-# Configure logging
-log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
-logger = logging.getLogger(__name__)
+# Configure enhanced logging early
+if HAS_ENHANCED_LOGGING:
+    configure_logging(
+        log_level=os.environ.get('LOG_LEVEL', 'INFO'),
+        enable_console=os.environ.get('LOG_ENABLE_CONSOLE', 'true').lower() == 'true',
+        enable_file=os.environ.get('LOG_ENABLE_FILE', 'true').lower() == 'true',
+        enable_structured=os.environ.get('LOG_ENABLE_STRUCTURED', 'true').lower() == 'true',
+        log_dir=os.environ.get('LOG_DIR', 'logs'),
+        log_file=os.environ.get('LOG_FILE', 'google-drive-service.log')
+    )
+    logger = get_logger(__name__, 'app')
+else:
+    # Fallback to basic logging
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+    logger = logging.getLogger(__name__)
 
 # Request tracking for debugging
 request_count = 0
@@ -87,8 +114,9 @@ def handle_exception(e: Exception) -> Tuple[Response, int]:
 
 # API Endpoints
 @app.route("/authorize_gdrive", methods=["GET"])
+@handle_api_errors("authorize_gdrive", "app") if HAS_ENHANCED_LOGGING else lambda f: f
 def authorize_gdrive_endpoint() -> Tuple[Response, int]:
-    """Endpoint to get the Google Drive authorization URL."""
+    """Endpoint to get the Google Drive authorization URL with enhanced logging."""
     try:
         logger.info("Generating Google Drive authorization URL")
         authorization_url = generate_authorization_url()
@@ -109,8 +137,9 @@ def authorize_gdrive_endpoint() -> Tuple[Response, int]:
 
 
 @app.route("/submit_auth_code", methods=["POST"])
+@handle_api_errors("submit_auth_code", "app") if HAS_ENHANCED_LOGGING else lambda f: f
 def submit_auth_code_endpoint() -> Tuple[Response, int]:
-    """Endpoint to submit the authorization code and obtain tokens."""
+    """Endpoint to submit the authorization code and obtain tokens with enhanced logging."""
     try:
         # Get authorization code from form data
         code = request.form.get("code")
@@ -150,8 +179,9 @@ def submit_auth_code_endpoint() -> Tuple[Response, int]:
 
 
 @app.route("/oauth/callback", methods=["GET"])
+@handle_api_errors("oauth_callback", "app") if HAS_ENHANCED_LOGGING else lambda f: f
 def oauth_callback() -> Tuple[Response, int]:
-    """Handle OAuth callback endpoint to process authorization code from Google."""
+    """Handle OAuth callback endpoint to process authorization code from Google with enhanced logging."""
     try:
         # Get authorization code from query parameters
         code = request.args.get("code")
@@ -386,8 +416,9 @@ def _cleanup_temp_file(temp_file_path: str) -> None:
 
 
 @app.route("/upload_file", methods=["POST"])
+@handle_api_errors("upload_file", "app") if HAS_ENHANCED_LOGGING else lambda f: f
 def upload_file_endpoint() -> Tuple[Response, int]:
-    """Endpoint to upload a file to Google Drive.
+    """Endpoint to upload a file to Google Drive with enhanced logging.
 
     Optional form parameters:
     - overwrite: Set to 'false' to keep both files if a file with the same name exists.
@@ -450,8 +481,9 @@ def upload_file_endpoint() -> Tuple[Response, int]:
 
 
 @app.route("/delete_folder", methods=["POST"])
+@handle_api_errors("delete_folder", "app") if HAS_ENHANCED_LOGGING else lambda f: f
 def delete_folder_endpoint() -> Tuple[Response, int]:
-    """Endpoint to delete a folder in Google Drive by path."""
+    """Endpoint to delete a folder in Google Drive by path with enhanced logging."""
     try:
         # Validate request parameters
         folder_path = request.form.get("folder_path")  # Get folder path from form data
