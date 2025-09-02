@@ -569,7 +569,6 @@ def _perform_resumable_upload(drive_service: Any, file_path: str, file_name: str
 
 
 @retry(max_retries=MAX_RETRIES, initial_delay=INITIAL_RETRY_DELAY, max_delay=MAX_RETRY_DELAY)
-@circuit_breaker(failure_threshold=5, reset_timeout=60.0)
 @handle_drive_operations("upload_file_to_drive", "file_ops") if HAS_ENHANCED_LOGGING else lambda f: f
 def upload_file_to_drive(drive_service: Any, file_path: str, folder_id: str, overwrite: bool = True) -> Optional[str]:
     """Uploads a file to Google Drive in the specified folder with enhanced logging.
