@@ -258,6 +258,7 @@ class TestGoogleDriveUtils(unittest.TestCase):
         # Test the function - enhanced logging converts HttpError to DriveAPIError
         try:
             from src.core.error_handling import DriveAPIError
+
             expected_exception = DriveAPIError
         except ImportError:
             # Fallback to original exception

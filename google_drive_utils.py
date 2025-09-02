@@ -28,16 +28,17 @@ from googleapiclient.http import MediaFileUpload
 # Import enhanced logging and error handling
 try:
     from src.core import (
-        get_logger,
-        handle_drive_operations,
-        safe_drive_operation,
-        validate_drive_parameters,
-        DriveAuthenticationError,
         DriveAPIError,
+        DriveAuthenticationError,
         DriveFileError,
         DriveFolderError,
+        get_logger,
+        handle_drive_operations,
         log_drive_metrics,
+        safe_drive_operation,
+        validate_drive_parameters,
     )
+
     HAS_ENHANCED_LOGGING = True
 except ImportError:
     HAS_ENHANCED_LOGGING = False
@@ -56,7 +57,7 @@ REDIRECT_URI = "http://localhost:9085/oauth/callback"
 
 # Configure enhanced logging
 if HAS_ENHANCED_LOGGING:
-    logger = get_logger(__name__, 'drive_utils')
+    logger = get_logger(__name__, "drive_utils")
 else:
     # Fallback to basic logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

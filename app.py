@@ -24,14 +24,15 @@ from werkzeug.exceptions import HTTPException
 # Import enhanced logging and error handling
 try:
     from src.core import (
+        ConfigurationError,
+        DriveAuthenticationError,
+        DriveOperationError,
         configure_logging,
         get_logger,
         handle_api_errors,
-        DriveOperationError,
-        DriveAuthenticationError,
-        ConfigurationError,
         validate_drive_parameters,
     )
+
     HAS_ENHANCED_LOGGING = True
 except ImportError:
     HAS_ENHANCED_LOGGING = False
@@ -52,18 +53,20 @@ app = Flask(__name__)
 # Configure enhanced logging early
 if HAS_ENHANCED_LOGGING:
     configure_logging(
-        log_level=os.environ.get('LOG_LEVEL', 'INFO'),
-        enable_console=os.environ.get('LOG_ENABLE_CONSOLE', 'true').lower() == 'true',
-        enable_file=os.environ.get('LOG_ENABLE_FILE', 'true').lower() == 'true',
-        enable_structured=os.environ.get('LOG_ENABLE_STRUCTURED', 'true').lower() == 'true',
-        log_dir=os.environ.get('LOG_DIR', 'logs'),
-        log_file=os.environ.get('LOG_FILE', 'google-drive-service.log')
+        log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        enable_console=os.environ.get("LOG_ENABLE_CONSOLE", "true").lower() == "true",
+        enable_file=os.environ.get("LOG_ENABLE_FILE", "true").lower() == "true",
+        enable_structured=os.environ.get("LOG_ENABLE_STRUCTURED", "true").lower() == "true",
+        log_dir=os.environ.get("LOG_DIR", "logs"),
+        log_file=os.environ.get("LOG_FILE", "google-drive-service.log"),
     )
-    logger = get_logger(__name__, 'app')
+    logger = get_logger(__name__, "app")
 else:
     # Fallback to basic logging
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
-    logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+    logging.basicConfig(
+        level=getattr(logging, log_level), format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    )
     logger = logging.getLogger(__name__)
 
 # Request tracking for debugging
