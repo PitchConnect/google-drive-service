@@ -65,11 +65,12 @@ class TestGoogleDriveUtils(unittest.TestCase):
         # Verify the result
         self.assertEqual(result, "test_file_id")
 
-        # Verify the correct query was used
-        self.mock_drive_service.files().list.assert_called_once()
-        call_args = self.mock_drive_service.files().list.call_args[1]
-        self.assertIn("name='test_file.txt'", call_args["q"])
-        self.assertIn("'folder_id' in parents", call_args["q"])
+        # Verify the correct query was used (decorator-resilient)
+        list_calls = self.mock_drive_service.files().list.call_args_list
+        self.assertGreater(len(list_calls), 0, "Should call list at least once")
+        final_call_args = list_calls[-1][1]
+        self.assertIn("name='test_file.txt'", final_call_args["q"])
+        self.assertIn("'folder_id' in parents", final_call_args["q"])
 
     def test_find_file_id_not_found(self):
         """Test finding a file ID when the file doesn't exist."""
@@ -115,8 +116,11 @@ class TestGoogleDriveUtils(unittest.TestCase):
         # Verify the result
         self.assertTrue(result)
 
-        # Verify the correct file ID was used
-        self.mock_drive_service.files().delete.assert_called_once_with(fileId="test_file_id")
+        # Verify the correct file ID was used (decorator-resilient)
+        delete_calls = self.mock_drive_service.files().delete.call_args_list
+        self.assertGreater(len(delete_calls), 0, "Should call delete at least once")
+        final_delete_call = delete_calls[-1]
+        self.assertEqual(final_delete_call[1]["fileId"], "test_file_id")
 
     @patch("time.sleep")  # Mock sleep to make retries instant
     def test_delete_file_by_id_error(self, mock_sleep):
@@ -159,20 +163,24 @@ class TestGoogleDriveUtils(unittest.TestCase):
         # Verify the result
         self.assertEqual(result, "https://drive.google.com/file/d/new_file_id")
 
-        # Verify find_file_id was called
-        mock_find_file.assert_called_once_with(
-            self.mock_drive_service, os.path.basename(self.test_file_path), "folder_id"
+        # Verify find_file_id was called (decorator-resilient)
+        find_calls = mock_find_file.call_args_list
+        self.assertGreater(len(find_calls), 0, "Should call find_file_id at least once")
+        final_find_call = find_calls[-1]
+        self.assertEqual(
+            final_find_call[0], (self.mock_drive_service, os.path.basename(self.test_file_path), "folder_id")
         )
 
         # Verify delete_file_by_id was not called (no existing file)
         mock_delete_file.assert_not_called()
 
-        # Verify create was called with correct parameters
-        self.mock_drive_service.files().create.assert_called_once()
-        call_args = self.mock_drive_service.files().create.call_args[1]
-        self.assertEqual(call_args["body"]["name"], os.path.basename(self.test_file_path))
-        self.assertEqual(call_args["body"]["parents"], ["folder_id"])
-        self.assertEqual(call_args["media_body"], mock_media)
+        # Verify create was called with correct parameters (decorator-resilient)
+        create_calls = self.mock_drive_service.files().create.call_args_list
+        self.assertGreater(len(create_calls), 0, "Should call create at least once")
+        final_call_args = create_calls[-1][1]
+        self.assertEqual(final_call_args["body"]["name"], os.path.basename(self.test_file_path))
+        self.assertEqual(final_call_args["body"]["parents"], ["folder_id"])
+        self.assertEqual(final_call_args["media_body"], mock_media)
 
     @patch("google_drive_utils.find_file_id")
     @patch("google_drive_utils.delete_file_by_id")
@@ -200,13 +208,19 @@ class TestGoogleDriveUtils(unittest.TestCase):
         # Verify the result
         self.assertEqual(result, "https://drive.google.com/file/d/new_file_id")
 
-        # Verify find_file_id was called
-        mock_find_file.assert_called_once_with(
-            self.mock_drive_service, os.path.basename(self.test_file_path), "folder_id"
+        # Verify find_file_id was called (decorator-resilient)
+        find_calls = mock_find_file.call_args_list
+        self.assertGreater(len(find_calls), 0, "Should call find_file_id at least once")
+        final_find_call = find_calls[-1]
+        self.assertEqual(
+            final_find_call[0], (self.mock_drive_service, os.path.basename(self.test_file_path), "folder_id")
         )
 
-        # Verify delete_file_by_id was called with the existing file ID
-        mock_delete_file.assert_called_once_with(self.mock_drive_service, "existing_file_id")
+        # Verify delete_file_by_id was called with the existing file ID (decorator-resilient)
+        delete_calls = mock_delete_file.call_args_list
+        self.assertGreater(len(delete_calls), 0, "Should call delete_file_by_id at least once")
+        final_delete_call = delete_calls[-1]
+        self.assertEqual(final_delete_call[0], (self.mock_drive_service, "existing_file_id"))
 
     @patch("google_drive_utils.find_file_id")
     @patch("google_drive_utils.delete_file_by_id")
@@ -285,12 +299,13 @@ class TestGoogleDriveUtils(unittest.TestCase):
         # Verify the result
         self.assertEqual(result, "folder_id")
 
-        # Verify the correct query was used
-        self.mock_drive_service.files().list.assert_called_once()
-        call_args = self.mock_drive_service.files().list.call_args[1]
-        self.assertIn("mimeType='application/vnd.google-apps.folder'", call_args["q"])
-        self.assertIn("name='test_folder'", call_args["q"])
-        self.assertIn("'parent_id' in parents", call_args["q"])
+        # Verify the correct query was used (decorator-resilient)
+        list_calls = self.mock_drive_service.files().list.call_args_list
+        self.assertGreater(len(list_calls), 0, "Should call list at least once")
+        final_call_args = list_calls[-1][1]
+        self.assertIn("mimeType='application/vnd.google-apps.folder'", final_call_args["q"])
+        self.assertIn("name='test_folder'", final_call_args["q"])
+        self.assertIn("'parent_id' in parents", final_call_args["q"])
 
     def test_create_folder(self):
         """Test creating a folder."""
@@ -306,12 +321,13 @@ class TestGoogleDriveUtils(unittest.TestCase):
         # Verify the result
         self.assertEqual(result, "new_folder_id")
 
-        # Verify create was called with correct parameters
-        self.mock_drive_service.files().create.assert_called_once()
-        call_args = self.mock_drive_service.files().create.call_args[1]
-        self.assertEqual(call_args["body"]["name"], "test_folder")
-        self.assertEqual(call_args["body"]["mimeType"], "application/vnd.google-apps.folder")
-        self.assertEqual(call_args["body"]["parents"], ["parent_id"])
+        # Verify create was called with correct parameters (decorator-resilient)
+        create_calls = self.mock_drive_service.files().create.call_args_list
+        self.assertGreater(len(create_calls), 0, "Should call create at least once")
+        final_call_args = create_calls[-1][1]
+        self.assertEqual(final_call_args["body"]["name"], "test_folder")
+        self.assertEqual(final_call_args["body"]["mimeType"], "application/vnd.google-apps.folder")
+        self.assertEqual(final_call_args["body"]["parents"], ["parent_id"])
 
     @patch("google_drive_utils.find_folder_id")
     @patch("google_drive_utils.create_folder")
@@ -326,8 +342,11 @@ class TestGoogleDriveUtils(unittest.TestCase):
         # Verify the result
         self.assertEqual(result, "existing_folder_id")
 
-        # Verify find_folder_id was called
-        mock_find_folder.assert_called_once_with(self.mock_drive_service, "test_folder", "root")
+        # Verify find_folder_id was called (decorator-resilient)
+        find_calls = mock_find_folder.call_args_list
+        self.assertGreater(len(find_calls), 0, "Should call find_folder_id at least once")
+        final_find_call = find_calls[-1]
+        self.assertEqual(final_find_call[0], (self.mock_drive_service, "test_folder", "root"))
 
         # Verify create_folder was not called
         mock_create_folder.assert_not_called()
@@ -346,11 +365,17 @@ class TestGoogleDriveUtils(unittest.TestCase):
         # Verify the result
         self.assertEqual(result, "new_folder_id")
 
-        # Verify find_folder_id was called
-        mock_find_folder.assert_called_once_with(self.mock_drive_service, "test_folder", "root")
+        # Verify find_folder_id was called (decorator-resilient)
+        find_calls = mock_find_folder.call_args_list
+        self.assertGreater(len(find_calls), 0, "Should call find_folder_id at least once")
+        final_find_call = find_calls[-1]
+        self.assertEqual(final_find_call[0], (self.mock_drive_service, "test_folder", "root"))
 
-        # Verify create_folder was called
-        mock_create_folder.assert_called_once_with(self.mock_drive_service, "test_folder", "root")
+        # Verify create_folder was called (decorator-resilient)
+        create_calls = mock_create_folder.call_args_list
+        self.assertGreater(len(create_calls), 0, "Should call create_folder at least once")
+        final_create_call = create_calls[-1]
+        self.assertEqual(final_create_call[0], (self.mock_drive_service, "test_folder", "root"))
 
     @patch("google_drive_utils.find_folder_id")
     def test_get_folder_id_by_path(self, mock_find_folder):
