@@ -76,11 +76,15 @@ request_count = 0
 # Error handling and request tracking middleware
 @app.before_request
 def before_request() -> None:
-    """Log and track incoming requests."""
+    """Log and track incoming requests (excluding health checks)."""
     global request_count
     request_count += 1
     request.start_time = time.time()
     request.request_id = f"{int(time.time())}-{request_count}"
+
+    # Skip logging for health check endpoints to reduce noise
+    if request.path in ["/health", "/ping"]:
+        return
 
     logger.info(f"Request {request.request_id} started: {request.method} {request.path} " f"[{request.remote_addr}]")
 
@@ -91,7 +95,11 @@ def before_request() -> None:
 
 @app.after_request
 def after_request(response: Response) -> Response:
-    """Log response information."""
+    """Log response information (excluding health checks)."""
+    # Skip logging for health check endpoints to reduce noise
+    if request.path in ["/health", "/ping"]:
+        return response
+
     if hasattr(request, "start_time") and hasattr(request, "request_id"):
         duration = time.time() - request.start_time
         logger.info(f"Request {request.request_id} completed: {response.status_code} " f"in {duration:.3f}s")
@@ -581,12 +589,17 @@ def health_check() -> Tuple[Response, int]:
     Returns:
         JSON response with basic service health status
     """
+    start_time = time.time()
+
     response = {
         "service": "google-drive-service",
         "timestamp": time.time(),
         "version": get_version(),
         "status": "healthy",
     }
+
+    duration = time.time() - start_time
+    logger.info(f"✅ Health check OK ({duration:.3f}s)")
 
     return jsonify(response), 200
 
