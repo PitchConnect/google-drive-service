@@ -9,7 +9,7 @@ import subprocess  # nosec B404 - controlled use to query git tags (no shell, co
 from datetime import datetime
 
 # Current version - update this for releases
-__version__ = "2025.08.3"
+__version__ = "2025.09.1"
 
 
 def get_version():
